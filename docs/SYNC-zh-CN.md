@@ -15,7 +15,8 @@
 
 ```bash
 git remote add upstream https://github.com/harshsinghsv/swiftdl.git
-git remote set-url --push upstream DISABLE   # 防止误推上游
+git remote set-url --push upstream https://github.com/harshsinghsv/swiftdl.git  # 无写权限，误推会失败，起到保险作用
+git config core.autocrlf false                 # Windows 下避免换行符导致整文件 diff
 git fetch upstream --tags
 ```
 
@@ -39,7 +40,7 @@ git merge upstream/main
 python tools/apply-zh.py app/ui
 
 # 5. 找出上游新增、尚未翻译的英文
-python tools/extract-en.py app/ui > /tmp/en.json    # 可选：导出候选清单
+python tools/extract-en.py app/ui > en.json          # 可选：导出候选清单（Windows 下无需 /tmp）
 #    对照清单人工补译，补进 tools/apply-zh.py 的 MAP 后重跑第 4 步
 
 # 6. 重新构建（两条命令都要跑）
@@ -81,7 +82,13 @@ gh release create vX.Y.Z-zh.1 \
 3. **应用标识保持 `com.swiftdl.app.cn`。** 这样中文版与原版的数据目录、单实例锁互不干扰，
    两个版本可以同时运行；若改回上游的 `com.swiftdl.app`，会与官方版抢同一把锁。
 
-## 五、上游大改版时
+## 五、Windows 本地环境备忘
+
+- 工作副本位置：`E:\软件安装文件夹\SwiftDL-ZH-Src`（origin 指向本 fork，upstream 指向上游）
+- 首次构建前需 Node 18+ 与 Rust stable；`npm ci` 失败时把 registry 换成国内镜像再试
+- 构建日志会散落在仓库根，提交前用 `git status` 确认别把 `*.log` 带进去
+
+## 六、上游大改版时
 
 若上游重写了 UI 结构（换框架、换组件库、文案迁到 i18n 文件），纯文本替换会大面积失配。
 此时不要逐条硬改，按这个顺序做：
