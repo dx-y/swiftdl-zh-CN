@@ -37,9 +37,9 @@ pub fn show_main_window(app: &AppHandle) {
 /// SwiftDL lives in the tray like IDM: closing the main window keeps
 /// downloads (and browser integration) running.
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open SwiftDL", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit SwiftDL", true, None::<&str>)?;
-    let nolimit = tauri::menu::CheckMenuItem::with_id(app, "nolimit", "Ignore speed limit", true, false, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "打开 SwiftDL", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出 SwiftDL", true, None::<&str>)?;
+    let nolimit = tauri::menu::CheckMenuItem::with_id(app, "nolimit", "忽略限速", true, false, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &nolimit, &PredefinedMenuItem::separator(app)?, &quit])?;
     let mut tray = TrayIconBuilder::with_id("main").tooltip("SwiftDL").menu(&menu).show_menu_on_left_click(false);
     if let Some(icon) = app.default_window_icon() {
@@ -186,7 +186,7 @@ fn main() {
             _ => {}
         })
         .build(tauri::generate_context!())
-        .expect("error while starting SwiftDL")
+        .expect("启动 SwiftDL 时出错")
         .run(|_app, _event| {
             // macOS hands over magnet links and .torrent files as an event,
             // not as arguments.

@@ -50,7 +50,7 @@ async fn source(client: &Client, url: &str, headers: &HeaderMap) -> Result<AddTo
         let resp = client.get(url).headers(headers.clone()).send().await?.error_for_status()?;
         let bytes = resp.bytes().await?;
         if bytes.first() != Some(&b'd') {
-            bail!("that link didn't return a .torrent file");
+            bail!("该链接没有返回 .torrent 文件");
         }
         return Ok(AddTorrent::from_bytes(bytes.to_vec()));
     }
@@ -81,8 +81,8 @@ pub async fn probe(client: &Client, url: &str, headers: &HeaderMap) -> Result<To
     let opts = AddTorrentOptions { list_only: true, ..Default::default() };
     let resp = tokio::time::timeout(Duration::from_secs(90), session.add_torrent(add, Some(opts)))
         .await
-        .map_err(|_| anyhow!("couldn't find anyone sharing this torrent"))??;
-    let AddTorrentResponse::ListOnly(list) = resp else { bail!("unexpected answer from the torrent engine") };
+        .map_err(|_| anyhow!("找不到任何做种者"))??;
+    let AddTorrentResponse::ListOnly(list) = resp else { bail!("种子引擎返回了无法理解的结果") };
     let info = &list.info;
     let name = info.name().map(|n| n.to_string()).unwrap_or_else(|| "torrent".into());
     let files: Vec<TorrentFile> = info
@@ -128,7 +128,7 @@ pub struct Job {
 /// pieces and continues.
 pub async fn run(client: &Client, job: Job, progress: Arc<Progress>, note: crate::media::Note, cancel: CancellationToken) -> Result<Outcome> {
     let set_note = |t: Option<String>| *note.lock().unwrap() = t;
-    set_note(Some(if job.url.starts_with("magnet:") { "Finding peers".into() } else { "Starting".into() }));
+    set_note(Some(if job.url.starts_with("magnet:") { "正在寻找节点".into() } else { "正在开始".into() }));
     let session = session().await?;
     std::fs::create_dir_all(&job.dir)?;
     let add = source(client, &job.url, &job.headers).await?;
@@ -139,7 +139,7 @@ pub async fn run(client: &Client, job: Job, progress: Arc<Progress>, note: crate
         ..Default::default()
     };
     let handle = tokio::select! {
-        r = session.add_torrent(add, Some(opts)) => r?.into_handle().ok_or_else(|| anyhow!("the torrent wasn't started"))?,
+        r = session.add_torrent(add, Some(opts)) => r?.into_handle().ok_or_else(|| anyhow!("种子没有启动"))?,
         _ = cancel.cancelled() => { set_note(None); return Ok(Outcome::Paused); }
     };
 
@@ -164,12 +164,12 @@ pub async fn run(client: &Client, job: Job, progress: Arc<Progress>, note: crate
                 let seeds = live.snapshot.peer_stats.live_seeders;
                 progress.connections.store(peers as usize, Ordering::Relaxed);
                 set_note(Some(match peers {
-                    0 => "Looking for peers".into(),
-                    1 => "Downloading from 1 peer".into(),
+                    0 => "正在寻找节点".into(),
+                    1 => "正在从 1 个节点下载".into(),
                     n => format!("Downloading from {n} peers · {seeds} seeding"),
                 }));
             }
-            None => set_note(Some("Checking existing pieces".into())),
+            None => set_note(Some("正在校验已有分块".into())),
         }
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(500)) => {}
@@ -224,14 +224,14 @@ pub fn register_handlers() -> Result<()> {
 
         // magnet: links
         let magnet = classes.create_subkey("magnet")?.0;
-        magnet.set_value("", &"URL:Magnet link")?;
+        magnet.set_value("", &"URL:磁力链接")?;
         magnet.set_value("URL Protocol", &"")?;
         magnet.create_subkey("DefaultIcon")?.0.set_value("", &icon)?;
         magnet.create_subkey(r"shell\open\command")?.0.set_value("", &open)?;
 
         // .torrent files
         let progid = classes.create_subkey("SwiftDL.Torrent")?.0;
-        progid.set_value("", &"Torrent file")?;
+        progid.set_value("", &"种子文件")?;
         progid.create_subkey("DefaultIcon")?.0.set_value("", &icon)?;
         progid.create_subkey(r"shell\open\command")?.0.set_value("", &open)?;
         let ext = classes.create_subkey(".torrent")?.0;
@@ -242,7 +242,7 @@ pub fn register_handlers() -> Result<()> {
         // Listed in Settings > Apps > Default apps.
         let caps = hkcu.create_subkey(r"Software\SwiftDL\Capabilities")?.0;
         caps.set_value("ApplicationName", &"SwiftDL")?;
-        caps.set_value("ApplicationDescription", &"Fast, open-source download manager")?;
+        caps.set_value("ApplicationDescription", &"快速、开源的下载管理器")?;
         caps.create_subkey("FileAssociations")?.0.set_value(".torrent", &"SwiftDL.Torrent")?;
         caps.create_subkey("URLAssociations")?.0.set_value("magnet", &"magnet")?;
         hkcu.create_subkey(r"Software\RegisteredApplications")?.0.set_value("SwiftDL", &r"Software\SwiftDL\Capabilities")?;

@@ -47,7 +47,7 @@ pub fn run() {
 
 fn handle(msg: &[u8]) -> Value {
     let Ok(v) = serde_json::from_slice::<Value>(msg) else {
-        return json!({ "ok": false, "error": "invalid JSON" });
+        return json!({ "ok": false, "error": "JSON 无效" });
     };
     crate::browser::mark_extension_seen(caller_browser());
     let reply = |r: io::Result<()>| match r {
@@ -65,7 +65,7 @@ fn handle(msg: &[u8]) -> Value {
         Some("show") => reply(launch_app(&[])),
         // The quality menu opened on a video: start looking it up now.
         Some("prepare") if v["url"].is_string() => reply(launch_app(&["--prepare", &URL_SAFE_NO_PAD.encode(msg)])),
-        _ => json!({ "ok": false, "error": "unknown message" }),
+        _ => json!({ "ok": false, "error": "未知消息" }),
     }
 }
 
@@ -86,7 +86,7 @@ fn refused(v: &Value) -> Option<String> {
     };
     let result = tauri::async_runtime::block_on(probe)?;
     let err = format!("{:#}", result.err()?);
-    (err.starts_with("server returned") || err.starts_with("This link opens a web page")).then(|| format!("{err}. The browser keeps this download."))
+    (err.starts_with("服务器返回") || err.starts_with("该链接打开的是网页")).then(|| format!("{err}。该下载由浏览器接管。"))
 }
 
 /// Starts the app with `args`. If it is already open, the single-instance

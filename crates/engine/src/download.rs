@@ -220,7 +220,7 @@ async fn download_segmented(
             let file = OpenOptions::new().create(true).write(true).truncate(true).open(part)?;
             // Reserve the full size up front so segments can write anywhere
             // and there is no join step at the end.
-            file.set_len(size).context("not enough disk space?")?;
+            file.set_len(size).context("磁盘空间不足？")?;
             (file, initial_segments(size, req.connections))
         }
     };
@@ -295,7 +295,7 @@ async fn download_segmented(
             shared.file.sync_all()?;
             Ok(Outcome::Completed)
         }
-        Ok(true) => bail!("workers finished but data is missing (this is a bug)"),
+        Ok(true) => bail!("下载线程已结束但数据缺失（这是程序缺陷）"),
         Ok(false) => {
             save()?;
             Ok(Outcome::Paused)

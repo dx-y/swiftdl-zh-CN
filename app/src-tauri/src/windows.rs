@@ -1,5 +1,5 @@
 //! Small per-download windows, like IDM's: "New download" when the browser
-//! hands over a file, then live progress, then "Download complete".
+//! hands over a file, then live progress, then "下载完成".
 
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 

@@ -85,7 +85,7 @@ fn parse_range(s: &str, next: u64) -> Option<(u64, u64)> {
 /// error here; the extension picks the quality before sending it.
 fn parse(text: &str, base: &Url) -> Result<Playlist> {
     if !text.trim_start().starts_with("#EXTM3U") {
-        bail!("this isn't an HLS playlist");
+        bail!("这不是 HLS 播放列表");
     }
     if text.contains("#EXT-X-STREAM-INF") {
         // Fall back to the highest quality when given the master playlist.
@@ -131,7 +131,7 @@ fn parse(text: &str, base: &Url) -> Result<Playlist> {
         }
     }
     if out.pieces.is_empty() {
-        bail!("the playlist has no video in it");
+        bail!("播放列表中没有视频");
     }
     Ok(out)
 }
@@ -167,7 +167,7 @@ impl Fetcher {
                 }
             }
         }
-        Err(last.unwrap_or_else(|| anyhow!("download failed")))
+        Err(last.unwrap_or_else(|| anyhow!("下载失败")))
     }
 
     async fn text(&self, url: &str) -> Result<String> {
@@ -271,18 +271,18 @@ fn el<'a, 'i>(n: roxmltree::Node<'a, 'i>, tag: &str) -> Option<roxmltree::Node<'
 /// The pieces of one representation of a DASH manifest. `Err("whole:<url>")`
 /// means it is one plain file (SegmentBase), which is fetched in chunks.
 fn parse_dash(text: &str, base: &Url, rep_id: &str) -> Result<Playlist> {
-    let doc = roxmltree::Document::parse(text).context("the stream's manifest isn't valid XML")?;
+    let doc = roxmltree::Document::parse(text).context("视频流的清单不是有效的 XML")?;
     let root = doc.root_element();
     if root.attribute("type") == Some("dynamic") {
-        bail!("live streams can't be downloaded yet");
+        bail!("暂时无法下载直播流");
     }
     let total = root.attribute("mediaPresentationDuration").and_then(iso_duration).unwrap_or(0.0);
     let rep = root
         .descendants()
         .find(|n| n.tag_name().name() == "Representation" && n.attribute("id") == Some(rep_id))
         .with_context(|| format!("the stream has no track {rep_id}"))?;
-    let set = rep.parent().context("track outside an adaptation set")?;
-    let period = set.parent().context("adaptation set outside a period")?;
+    let set = rep.parent().context("轨道不在 AdaptationSet 中")?;
+    let period = set.parent().context("AdaptationSet 不在 Period 中")?;
     let period_secs = period.attribute("duration").and_then(iso_duration).unwrap_or(total);
     // BaseURLs stack from the manifest down to the track.
     let mut url = base.clone();
@@ -302,7 +302,7 @@ fn parse_dash(text: &str, base: &Url, rep_id: &str) -> Result<Playlist> {
         let attr = |k: &str| t.attribute(k).or_else(|| el(set, "SegmentTemplate").and_then(|s| s.attribute(k)));
         let timescale: u64 = attr("timescale").and_then(|v| v.parse().ok()).unwrap_or(1);
         let start: u64 = attr("startNumber").and_then(|v| v.parse().ok()).unwrap_or(1);
-        let media = attr("media").context("segment template without media")?;
+        let media = attr("media").context("分片模板缺少媒体地址")?;
         if let Some(init) = attr("initialization") {
             out.init = Some(piece(url.join(&fill(init, id, bw, 0, 0))?.to_string(), None, 0));
         }
@@ -326,10 +326,10 @@ fn parse_dash(text: &str, base: &Url, rep_id: &str) -> Result<Playlist> {
                 }
             }
         } else {
-            let d: f64 = attr("duration").and_then(|v| v.parse().ok()).context("segment template without length")?;
+            let d: f64 = attr("duration").and_then(|v| v.parse().ok()).context("分片模板缺少长度")?;
             let count = ((period_secs * timescale as f64) / d).ceil() as u64;
             if count == 0 {
-                bail!("the stream's length is unknown");
+                bail!("视频流长度未知");
             }
             for _ in 0..count {
                 out.pieces.push(piece(url.join(&fill(media, id, bw, number, 0))?.to_string(), None, number));
@@ -350,7 +350,7 @@ fn parse_dash(text: &str, base: &Url, rep_id: &str) -> Result<Playlist> {
         bail!("whole:{url}");
     }
     if out.pieces.is_empty() {
-        bail!("the stream has no video in it");
+        bail!("视频流中没有视频");
     }
     Ok(out)
 }
@@ -373,8 +373,8 @@ async fn chunks(f: &Fetcher, url: &str) -> Result<Playlist> {
 
 async fn load(f: &Fetcher, url: &str) -> Result<Playlist> {
     if let Some(src) = url.strip_prefix("dash:") {
-        let (mpd, id) = src.rsplit_once('#').context("bad stream address")?;
-        let text = f.text(mpd).await.context("couldn't read the stream's manifest")?;
+        let (mpd, id) = src.rsplit_once('#').context("视频流地址无效")?;
+        let text = f.text(mpd).await.context("无法读取视频流清单")?;
         return match parse_dash(&text, &Url::parse(mpd)?, id) {
             Err(e) if e.to_string().starts_with("whole:") => chunks(f, &e.to_string()["whole:".len()..]).await,
             other => other,
@@ -382,13 +382,13 @@ async fn load(f: &Fetcher, url: &str) -> Result<Playlist> {
     }
     let mut url = url.to_string();
     for _ in 0..2 {
-        let text = f.text(&url).await.context("couldn't read the stream's playlist")?;
+        let text = f.text(&url).await.context("无法读取视频流播放列表")?;
         match parse(&text, &Url::parse(&url)?) {
             Err(e) if e.to_string().starts_with("master:") => url = e.to_string()["master:".len()..].to_string(),
             other => return other,
         }
     }
-    bail!("couldn't find the video in the playlist")
+    bail!("播放列表中找不到视频")
 }
 
 pub async fn run(client: &Client, job: Job, progress: Arc<Progress>, note: crate::media::Note, cancel: CancellationToken) -> Result<Outcome> {
@@ -396,7 +396,7 @@ pub async fn run(client: &Client, job: Job, progress: Arc<Progress>, note: crate
     let set = |t: &str| *note.lock().unwrap() = Some(t.to_string());
     // Joining needs ffmpeg; fetch it now (first time only) if it's missing.
     crate::media::ensure_ffmpeg(client, &note).await?;
-    set("Starting");
+    set("正在开始");
     let video = load(&f, &job.video).await?;
     let audio = match &job.audio {
         Some(a) => Some(load(&f, a).await?),
@@ -454,14 +454,14 @@ pub async fn run(client: &Client, job: Job, progress: Arc<Progress>, note: crate
                 let key = {
                     let mut k = keys.lock().await;
                     if !k.contains_key(uri) {
-                        let got = f.get(uri, None).await.context("couldn't get the video's key")?;
+                        let got = f.get(uri, None).await.context("无法获取视频的解密密钥")?;
                         k.insert(uri.clone(), got);
                     }
                     k[uri].clone()
                 };
                 let iv = iv.unwrap_or_else(|| (piece.seq as u128).to_be_bytes());
-                let dec = cbc::Decryptor::<aes::Aes128>::new_from_slices(&key, &iv).map_err(|_| anyhow!("the video's key is invalid"))?;
-                data = dec.decrypt_padded_vec_mut::<Pkcs7>(&data).map_err(|_| anyhow!("couldn't decrypt a piece of the video"))?;
+                let dec = cbc::Decryptor::<aes::Aes128>::new_from_slices(&key, &iv).map_err(|_| anyhow!("视频的解密密钥无效"))?;
+                data = dec.decrypt_padded_vec_mut::<Pkcs7>(&data).map_err(|_| anyhow!("无法解密视频的某个分片"))?;
             }
             // Writing can stall (antivirus scans each new file); keep it off
             // the downloads so the other pieces keep coming.
@@ -533,13 +533,13 @@ async fn finish(video: &Path, audio: Option<&Path>, dest: &Path) -> Result<()> {
             })
             .await??;
             if !out.status.success() {
-                bail!("couldn't join the video: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("ffmpeg failed"));
+                bail!("couldn't join the video: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("ffmpeg 执行失败"));
             }
         }
         None if audio.is_none() => {
             std::fs::rename(video, dest.with_extension("ts"))?;
         }
-        None => bail!("Joining video and audio needs ffmpeg."),
+        None => bail!("合并视频与音频需要 ffmpeg。"),
     }
     Ok(())
 }

@@ -64,7 +64,7 @@ pub struct Item {
     /// presence marks the download as a torrent.
     #[serde(default)]
     pub torrent_files: Option<Vec<usize>>,
-    /// Live status text, such as "Merging video and audio".
+    /// Live status text, such as "正在合并视频与音频".
     #[serde(default, skip_deserializing)]
     pub note: Option<String>,
     /// SHA-256 the user gave to check the finished file against.
@@ -183,7 +183,7 @@ pub struct DownloadManager {
     app: AppHandle,
     client: Client,
     limiter: Arc<SpeedLimiter>,
-    /// The tray's "Ignore speed limit" is on.
+    /// The tray's "忽略限速" is on.
     limit_off: std::sync::atomic::AtomicBool,
     data_dir: PathBuf,
     inner: Mutex<Inner>,
@@ -370,7 +370,7 @@ impl DownloadManager {
         self.limiter.set_rate(if off { 0 } else { kib * 1024 });
     }
 
-    /// The tray's "Ignore speed limit": flips it, and returns whether it is on.
+    /// The tray's "忽略限速": flips it, and returns whether it is on.
     pub fn toggle_limit(&self) -> bool {
         let off = !self.limit_off.fetch_xor(true, Ordering::Relaxed);
         let kib = self.inner.lock().unwrap().settings.speed_limit_kib;
@@ -488,7 +488,7 @@ impl DownloadManager {
             g.confirms.insert(token, inc);
             token
         };
-        if let Err(e) = crate::windows::open(&self.app, &format!("new-{token}"), &format!("confirm={token}"), "New download") {
+        if let Err(e) = crate::windows::open(&self.app, &format!("new-{token}"), &format!("confirm={token}"), "新建下载") {
             crate::log::line(&format!("could not open the New download window: {e:#}"));
         }
     }
@@ -700,7 +700,7 @@ impl DownloadManager {
         }
         if let Some(name) = notify {
             use tauri_plugin_notification::NotificationExt;
-            let _ = self.app.notification().builder().title("Download complete").body(name).show();
+            let _ = self.app.notification().builder().title("下载完成").body(name).show();
         }
         if let Some(path) = unpack {
             let app = self.app.clone();
@@ -710,11 +710,11 @@ impl DownloadManager {
                 match crate::extract::unpack(&path) {
                     Ok(dir) => {
                         crate::log::line(&format!("unpacked {name} into {}", dir.display()));
-                        let _ = app.notification().builder().title("Unpacked").body(format!("{name} is in {}", dir.display())).show();
+                        let _ = app.notification().builder().title("已解压").body(format!("{name} 已解压到 {}", dir.display())).show();
                     }
                     Err(e) => {
                         crate::log::line(&format!("couldn't unpack {name}: {e:#}"));
-                        let _ = app.notification().builder().title("Couldn't unpack").body(format!("{name}: {e}")).show();
+                        let _ = app.notification().builder().title("解压失败").body(format!("{name}: {e}")).show();
                     }
                 }
             });
@@ -746,7 +746,7 @@ impl DownloadManager {
             return result;
         }
         let Some((want, path)) = self.item(id).and_then(|i| i.checksum.clone().map(|c| (c, i.path.clone()))) else { return result };
-        *note.lock().unwrap() = Some("Checking the file".into());
+        *note.lock().unwrap() = Some("正在检查文件".into());
         match tauri::async_runtime::spawn_blocking(move || sha256_file(&path)).await {
             Ok(Ok(got)) if got.eq_ignore_ascii_case(want.trim()) => {
                 if let Some(i) = self.inner.lock().unwrap().items.iter_mut().find(|i| i.id == id) {
@@ -755,7 +755,7 @@ impl DownloadManager {
                 result
             }
             Ok(Ok(got)) => Err(anyhow::anyhow!("The file's SHA-256 doesn't match. Expected {}, got {got}. It may be corrupted or not the file you meant.", want.trim())),
-            _ => Err(anyhow::anyhow!("The file finished, but couldn't be read to check it.")),
+            _ => Err(anyhow::anyhow!("文件已下载完成，但读取校验失败。")),
         }
     }
 
@@ -764,16 +764,16 @@ impl DownloadManager {
     pub fn set_url(self: &Arc<Self>, id: u64, url: &str) -> Result<(), String> {
         let url = url.trim();
         if !(url.starts_with("http://") || url.starts_with("https://")) {
-            return Err("That isn't a web link".into());
+            return Err("这不是网页链接".into());
         }
         {
             let mut g = self.inner.lock().unwrap();
-            let Some(item) = g.items.iter_mut().find(|i| i.id == id) else { return Err("Download not found".into()) };
+            let Some(item) = g.items.iter_mut().find(|i| i.id == id) else { return Err("未找到该下载".into()) };
             if item.format.is_some() || item.torrent_files.is_some() {
-                return Err("Only regular file downloads can change address".into());
+                return Err("只有普通文件下载可以更换地址".into());
             }
             if matches!(item.status, Status::Completed | Status::Downloading) {
-                return Err("Pause the download first".into());
+                return Err("请先暂停下载".into());
             }
             item.url = url.to_string();
             item.error = None;
@@ -791,8 +791,8 @@ impl DownloadManager {
             self.app.exit(0);
             return;
         }
-        let body = if kind == "sleep" { "Going to sleep in a few seconds." } else { "Shutting down in 60 seconds. To cancel, run: shutdown /a" };
-        let _ = self.app.notification().builder().title("Downloads finished").body(body).show();
+        let body = if kind == "sleep" { "几秒后将进入睡眠。" } else { "60 秒后关机。要取消请运行：shutdown /a" };
+        let _ = self.app.notification().builder().title("下载全部结束").body(body).show();
         let kind = kind.to_string();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(5));

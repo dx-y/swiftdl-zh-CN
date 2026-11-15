@@ -54,7 +54,7 @@ pub async fn check(client: &Client) -> Result<Option<Update>> {
         .error_for_status()?
         .text()
         .await?;
-    let rel: Value = serde_json::from_str(&body).context("GitHub sent an unexpected reply")?;
+    let rel: Value = serde_json::from_str(&body).context("GitHub 返回了无法理解的结果")?;
     let tag = rel["tag_name"].as_str().unwrap_or_default();
     if rel["draft"].as_bool() == Some(true) || rel["prerelease"].as_bool() == Some(true) || !is_newer(tag, env!("CARGO_PKG_VERSION")) {
         return Ok(None);
@@ -78,18 +78,18 @@ pub async fn check(client: &Client) -> Result<Option<Update>> {
 #[cfg(windows)]
 pub async fn run_installer(client: &Client, url: &str) -> Result<()> {
     if !url.starts_with("https://github.com/harshsinghsv/swiftdl/releases/download/") {
-        bail!("refusing to install from {url}");
+        bail!("拒绝从 {url} 安装更新");
     }
     let bytes = client.get(url).header("User-Agent", "SwiftDL").send().await?.error_for_status()?.bytes().await?;
     let path = std::env::temp_dir().join(url.rsplit('/').next().unwrap_or("SwiftDL-setup.exe"));
-    std::fs::write(&path, &bytes).with_context(|| format!("could not save {}", path.display()))?;
-    std::process::Command::new(&path).args(["/P", "/R", "/UPDATE"]).spawn().context("could not start the installer")?;
+    std::fs::write(&path, &bytes).with_context(|| format!("无法保存 {}", path.display()))?;
+    std::process::Command::new(&path).args(["/P", "/R", "/UPDATE"]).spawn().context("无法启动安装程序")?;
     Ok(())
 }
 
 #[cfg(not(windows))]
 pub async fn run_installer(_client: &Client, _url: &str) -> Result<()> {
-    bail!("installing in place is only supported on Windows")
+    bail!("仅 Windows 支持原地安装更新")
 }
 
 #[cfg(test)]

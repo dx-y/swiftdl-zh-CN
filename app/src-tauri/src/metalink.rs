@@ -19,9 +19,9 @@ pub fn is_metalink(url: &str) -> bool {
 }
 
 pub fn parse(xml: &str) -> Result<Metalink> {
-    let doc = roxmltree::Document::parse(xml).context("not a valid Metalink file")?;
-    let file = doc.descendants().find(|n| n.has_tag_name("file")).context("the Metalink lists no file")?;
-    let name = file.attribute("name").context("the Metalink file has no name")?.to_string();
+    let doc = roxmltree::Document::parse(xml).context("不是有效的 Metalink 文件")?;
+    let file = doc.descendants().find(|n| n.has_tag_name("file")).context("该 Metalink 未列出任何文件")?;
+    let name = file.attribute("name").context("该 Metalink 文件没有名称")?.to_string();
     let text = |tag: &str| file.descendants().find(|n| n.has_tag_name(tag)).and_then(|n| n.text()).map(|t| t.trim().to_string());
     let size = text("size").and_then(|s| s.parse().ok());
     let sha256 = file
@@ -48,7 +48,7 @@ pub fn parse(xml: &str) -> Result<Metalink> {
         })
         .collect();
     if urls.is_empty() {
-        bail!("the Metalink has no web addresses SwiftDL can use");
+        bail!("该 Metalink 中没有 SwiftDL 可用的网址");
     }
     urls.sort_by_key(|(rank, _)| *rank); // stable: equal ranks keep their order
     Ok(Metalink { name, size, sha256, urls: urls.into_iter().map(|(_, u)| u).collect() })

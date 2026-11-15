@@ -25,12 +25,12 @@ struct Target {
 
 fn parse(url: &str) -> Result<Target> {
     let u = url::Url::parse(url).context("not a valid ftp:// address")?;
-    let host = u.host_str().context("the address has no server")?;
+    let host = u.host_str().context("该地址中没有服务器")?;
     let decode = |s: &str| percent_encoding::percent_decode_str(s).decode_utf8_lossy().into_owned();
     let path = decode(u.path());
     let name = path.rsplit('/').find(|p| !p.is_empty()).unwrap_or("").to_string();
     if name.is_empty() {
-        bail!("the address doesn't point to a file");
+        bail!("该地址并未指向文件");
     }
     Ok(Target {
         addr: format!("{host}:{}", u.port().unwrap_or(21)),
@@ -43,9 +43,9 @@ fn parse(url: &str) -> Result<Target> {
 
 fn connect(t: &Target) -> Result<FtpStream> {
     use std::net::ToSocketAddrs;
-    let addr = t.addr.to_socket_addrs().with_context(|| format!("couldn't find the server {}", t.addr))?.next().context("the server has no address")?;
+    let addr = t.addr.to_socket_addrs().with_context(|| format!("couldn't find the server {}", t.addr))?.next().context("服务器没有地址")?;
     let mut ftp = FtpStream::connect_timeout(addr, Duration::from_secs(15)).with_context(|| format!("couldn't connect to {}", t.addr))?;
-    ftp.login(&t.user, &t.pass).context("the server refused the login")?;
+    ftp.login(&t.user, &t.pass).context("服务器拒绝了登录")?;
     // Extended passive (EPSV) works through more firewalls and on IPv6; the
     // library falls back to plain passive for old servers.
     ftp.set_mode(suppaftp::Mode::ExtendedPassive);
@@ -73,7 +73,7 @@ fn part_of(dest: &Path) -> PathBuf {
 fn download(url: &str, dest: &Path, progress: &Progress, cancel: &CancellationToken) -> Result<Outcome> {
     let t = parse(url)?;
     let mut ftp = connect(&t)?;
-    let total = ftp.size(&t.path).context("the server doesn't have that file")? as u64;
+    let total = ftp.size(&t.path).context("服务器上没有该文件")? as u64;
     progress.total.store(total, Ordering::Relaxed);
     progress.resumable.store(true, Ordering::Relaxed);
     if let Some(dir) = dest.parent().filter(|d| !d.as_os_str().is_empty()) {
@@ -85,17 +85,17 @@ fn download(url: &str, dest: &Path, progress: &Progress, cancel: &CancellationTo
     let offset = if have > 0 && have < total { have } else { 0 };
     let mut file = if offset > 0 { std::fs::OpenOptions::new().append(true).open(&part)? } else { std::fs::File::create(&part)? };
     if offset > 0 {
-        ftp.resume_transfer(offset as usize).context("the server can't resume")?;
+        ftp.resume_transfer(offset as usize).context("服务器不支持续传")?;
     }
     progress.downloaded.store(offset, Ordering::Relaxed);
     progress.connections.store(1, Ordering::Relaxed);
-    let mut data = ftp.retr_as_stream(&t.path).context("the server wouldn't send the file")?;
+    let mut data = ftp.retr_as_stream(&t.path).context("服务器不愿发送该文件")?;
     let mut buf = vec![0u8; 256 * 1024];
     let paused = loop {
         if cancel.is_cancelled() {
             break true;
         }
-        let n = data.read(&mut buf).context("the connection broke")?;
+        let n = data.read(&mut buf).context("连接已中断")?;
         if n == 0 {
             break false;
         }
@@ -131,7 +131,7 @@ mod tests {
         assert_eq!((t.path.as_str(), t.name.as_str()), ("/pub/My File.zip", "My File.zip"));
         let a = parse("ftp://files.example.com/a.iso").unwrap();
         assert_eq!((a.addr.as_str(), a.user.as_str()), ("files.example.com:21", "anonymous"));
-        assert!(parse("ftp://files.example.com/").is_err(), "a folder isn't a file");
+        assert!(parse("ftp://files.example.com/").is_err(), "文件夹不是文件");
     }
 
     /// `SWIFTDL_FTP_URL=ftp://... SWIFTDL_FTP_OUT=... cargo test live_ftp -- --ignored --nocapture`

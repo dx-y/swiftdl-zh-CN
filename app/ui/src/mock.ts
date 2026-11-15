@@ -208,7 +208,7 @@ declare global { interface Window { __video?: unknown } }
       return { title: "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film", site: "Youtube", duration: 634, qualities: [
         { label: "2160p60", format: "bv*[height=2160]+ba", ext: "mp4", size: 1.9 * GB }, { label: "1440p60", format: "bv*[height=1440]+ba", ext: "mp4", size: 980 * MB },
         { label: "1080p60", format: "bv*[height=1080]+ba", ext: "mp4", size: 412 * MB }, { label: "720p60", format: "bv*[height=720]+ba", ext: "mp4", size: 198 * MB },
-        { label: "Audio only", format: "ba[ext=m4a]/ba", ext: "m4a", size: 9.8 * MB }] };
+        { label: "仅音频", format: "ba[ext=m4a]/ba", ext: "m4a", size: 9.8 * MB }] };
     },
   };
 

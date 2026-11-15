@@ -4,7 +4,7 @@
 import "./styles.css";
 import { invoke, listen, currentWindow, $ } from "./api";
 import type { Item, Settings, IntegrationStatus, BrowserStatus, Incoming, ProbeInfo, Header, Status, Commands, UpdateInfo } from "./api";
-import { icon, CATS, catOf, parts, bytes, speed, dur, when, esc, host, segBar } from "./util";
+import { icon, CATS, catOf, parts, bytes, speed, dur, when, esc, host, segBar, catName } from "./util";
 
 const appWindow = currentWindow();
 const target = (e: Event) => e.target as HTMLElement;
@@ -44,7 +44,7 @@ const eta = (it: Item) => (it.speed > 0 && it.size ? (it.size - it.downloaded) /
 const queuePos = (it: Item) => state.items.filter((i) => i.status === "queued").findIndex((i) => i.id === it.id) + 1;
 const isActive = (it: Item) => it.status === "downloading" || it.status === "queued";
 const ext = (name: string) => (/\.([a-z0-9]{1,5})$/i.exec(name || "") || [])[1]?.toUpperCase() || "";
-const STATUS: Record<Status, string> = { downloading: "Downloading", queued: "Queued", paused: "Paused", completed: "Completed", error: "Failed" };
+const STATUS: Record<Status, string> = { downloading: "下载中", queued: "排队中", paused: "已暂停", completed: "已完成", error: "失败" };
 
 // ---------- state ----------
 const HISTORY = 120;
@@ -62,10 +62,10 @@ const state: State = {
 const settings = (): Settings => state.settings as Settings;
 interface View { name: string; icon: string; test: (i: Item) => boolean }
 const VIEWS: Record<string, View> = {
-  all: { name: "All downloads", icon: "inbox", test: () => true },
-  active: { name: "In progress", icon: "arrowDown", test: (i) => i.status !== "completed" && i.status !== "error" },
-  completed: { name: "Completed", icon: "doneCircle", test: (i) => i.status === "completed" },
-  failed: { name: "Failed", icon: "alert", test: (i) => i.status === "error" },
+  all: { name: "全部下载", icon: "inbox", test: () => true },
+  active: { name: "进行中", icon: "arrowDown", test: (i) => i.status !== "completed" && i.status !== "error" },
+  completed: { name: "已完成", icon: "doneCircle", test: (i) => i.status === "completed" },
+  failed: { name: "失败", icon: "alert", test: (i) => i.status === "error" },
 };
 const byId = (id: number | null) => state.items.find((i) => i.id === id);
 function visible() {
@@ -75,7 +75,7 @@ function visible() {
     (!q || it.filename.toLowerCase().includes(q) || it.url.toLowerCase().includes(q)));
 }
 const GROUPS: [Status, string][] = [
-  ["downloading", "Downloading"], ["queued", "Queued"], ["paused", "Paused"], ["error", "Failed"], ["completed", "Completed"],
+  ["downloading", "下载中"], ["queued", "排队中"], ["paused", "已暂停"], ["error", "失败"], ["completed", "已完成"],
 ];
 function grouped(list: Item[]) {
   return GROUPS.map(([s, title]) => {
@@ -145,13 +145,13 @@ function renderNav() {
   const live = state.items.some((i) => i.status === "downloading");
   const item = (view: string, label: string, ic: string, n: number, extra = "") =>
     `<button class="nav-item ${state.view === view ? "on" : ""}" data-view="${view}"><span class="ni-icon">${ic}</span><span class="ni-label">${label}</span>${extra}<span class="ni-count">${n || ""}</span></button>`;
-  let html = item("all", "All downloads", icon("inbox"), state.items.length) +
-    item("active", "In progress", icon("arrowDown"), count(VIEWS.active.test), live ? '<span class="ni-live"></span>' : "") +
-    item("completed", "Completed", icon("doneCircle"), count(VIEWS.completed.test));
+  let html = item("all", "全部下载", icon("inbox"), state.items.length) +
+    item("active", "进行中", icon("arrowDown"), count(VIEWS.active.test), live ? '<span class="ni-live"></span>' : "") +
+    item("completed", "已完成", icon("doneCircle"), count(VIEWS.completed.test));
   const failed = count(VIEWS.failed.test);
-  if (failed || state.view === "failed") html += item("failed", "Failed", icon("alert"), failed);
-  html += `<button class="nav-sec ${state.typesOpen ? "" : "closed"}" data-toggle="types">Types ${icon("chevDown")}</button>`;
-  if (state.typesOpen) for (const name of Object.keys(CATS)) html += item(name, name, typeIcon(name), count((i) => i.category === name));
+  if (failed || state.view === "failed") html += item("failed", "失败", icon("alert"), failed);
+  html += `<button class="nav-sec ${state.typesOpen ? "" : "closed"}" data-toggle="types">类型 ${icon("chevDown")}</button>`;
+  if (state.typesOpen) for (const name of Object.keys(CATS)) html += item(name, catName(name), typeIcon(name), count((i) => i.category === name));
   if ($("nav").innerHTML !== html) $("nav").innerHTML = html;
 
   const active = state.items.filter((i) => i.status === "downloading");
@@ -161,9 +161,9 @@ function renderNav() {
   $("net-speed").textContent = v;
   $("net-unit").textContent = `${u}/s`;
   const left = active.reduce((s, i) => s + Math.max(0, (i.size || 0) - i.downloaded), 0);
-  $("net-foot").textContent = active.length ? `${active.length} active${queued ? `, ${queued} queued` : ""} · ${bytes(left)} left` : queued ? `${queued} queued` : "Idle";
+  $("net-foot").textContent = active.length ? `${active.length} 个进行中${queued ? `，${queued} 个排队` : ""} · 剩余 ${bytes(left)}` : queued ? `${queued} 个排队` : "空闲";
   const lim = state.settings?.speedLimitKib || 0;
-  $("limit-btn").textContent = lim ? `≤ ${bytes(lim * 1024)}/s` : "No limit";
+  $("limit-btn").textContent = lim ? `≤ ${bytes(lim * 1024)}/s` : "不限速";
   $("limit-btn").classList.toggle("on", !!lim);
   areaChart($("net-graph"), state.totalHist);
 }
@@ -172,7 +172,7 @@ function renderNav() {
 function renderHeader(list: Item[]) {
   const v = VIEWS[state.view];
   $("h-icon").innerHTML = v ? icon(v.icon) : typeIcon(state.view);
-  $("h-name").textContent = v ? v.name : state.view;
+  $("h-name").textContent = v ? v.name : catName(state.view);
   $("h-count").textContent = list.length ? String(list.length) : "";
   $("btn-pause-all").hidden = !list.some(isActive);
   $("btn-resume-all").hidden = !list.some((i) => i.status === "paused" || i.status === "error");
@@ -195,17 +195,17 @@ function meta(it: Item) {
   switch (it.status) {
     case "downloading":
       return `${mini("")}<span class="m-size">${bytes(it.downloaded)} / ${bytes(it.size)}</span><span class="m-speed">${it.speed > 0 ? speed(it.speed) : "Connecting…"}</span><span class="m-eta">${dur(eta(it))}</span>`;
-    case "queued": return `${mini("queued")}<span class="m-size">${it.size ? bytes(it.size) : "—"}</span><span class="m-speed" style="color:var(--muted);font-weight:500">Queued · #${queuePos(it)}</span><span class="m-eta"></span>`;
-    case "paused": return `${mini("paused")}<span class="m-size">${bytes(it.downloaded)} / ${bytes(it.size)}</span><span class="m-speed" style="color:var(--amber);font-weight:500">Paused</span><span class="m-eta"></span>`;
+    case "queued": return `${mini("queued")}<span class="m-size">${it.size ? bytes(it.size) : "—"}</span><span class="m-speed" style="color:var(--muted);font-weight:500">排队中 · 第 ${queuePos(it)} 位</span><span class="m-eta"></span>`;
+    case "paused": return `${mini("paused")}<span class="m-size">${bytes(it.downloaded)} / ${bytes(it.size)}</span><span class="m-speed" style="color:var(--amber);font-weight:500">已暂停</span><span class="m-eta"></span>`;
     case "error": return `<span class="m-size">${bytes(it.size)}</span><span class="m-when">${when(it.addedAt)}</span>`;
-    default: return `<span class="cat"><i style="background:${cat(it).color}"></i>${esc(it.category)}</span><span class="m-size">${bytes(it.size)}</span><span class="m-when">${when(it.completedAt)}</span>`;
+    default: return `<span class="cat"><i style="background:${cat(it).color}"></i>${esc(catName(it.category))}</span><span class="m-size">${bytes(it.size)}</span><span class="m-when">${when(it.completedAt)}</span>`;
   }
 }
 function updateRow(el: RowEl, it: Item) {
   el.classList.toggle("sel", state.selected === it.id);
   set(el, 0, statusIcon(it));
   const e = ext(it.filename);
-  set(el, 1, `<span class="r-name" title="${esc(it.filename)}">${esc(it.filename.replace(/\.[^.]+$/, "") || it.filename)}</span>${e ? `<span class="r-ext">${e}</span>` : ""}${it.status === "error" ? `<span class="r-err">${esc(it.error || "Failed")}</span>` : ""}`);
+  set(el, 1, `<span class="r-name" title="${esc(it.filename)}">${esc(it.filename.replace(/\.[^.]+$/, "") || it.filename)}</span>${e ? `<span class="r-ext">${e}</span>` : ""}${it.status === "error" ? `<span class="r-err">${esc(it.error || "失败")}</span>` : ""}`);
   set(el, 2, meta(it));
 }
 function renderList() {
@@ -215,7 +215,7 @@ function renderList() {
     let h = headEls.get(g.s);
     if (!h) { h = document.createElement("div"); h.className = "ghead"; headEls.set(g.s, h); }
     const right = g.s === "downloading" ? speed(g.items.reduce((s, i) => s + (i.speed || 0), 0)) : g.s === "completed" ? bytes(g.items.reduce((s, i) => s + (i.size || 0), 0)) : "";
-    const html = `${statusIcon({ status: g.s, size: 4, downloaded: 3 })}<span>${g.title}</span><span class="gc">${g.items.length}</span><span class="gr">${right}</span>${g.s === "completed" ? `<button type="button" class="gclear" data-clear title="Remove finished downloads from the list (the files stay)">Clear</button>` : ""}`;
+    const html = `${statusIcon({ status: g.s, size: 4, downloaded: 3 })}<span>${g.title}</span><span class="gc">${g.items.length}</span><span class="gr">${right}</span>${g.s === "completed" ? `<button type="button" class="gclear" data-clear title="清空已完成的任务（文件仍保留在磁盘）">清空</button>` : ""}`;
     if (h.innerHTML !== html) h.innerHTML = html;
     nodes.push(h);
     for (const it of g.items) {
@@ -232,8 +232,8 @@ function renderList() {
   $("empty").hidden = list.length > 0;
   if (!list.length) {
     const q = state.search.trim();
-    $("empty-title").textContent = q ? "No results" : state.items.length ? "Nothing here" : "No downloads yet";
-    $("empty-text").textContent = q ? `No downloads match “${q}”.` : state.items.length ? "Downloads in this view will show up here." : "Paste a link, drop one onto this window, or start a download in your browser.";
+    $("empty-title").textContent = q ? "无匹配结果" : state.items.length ? "这里还没有内容" : "暂无下载";
+    $("empty-text").textContent = q ? `没有匹配“${q}”.` : state.items.length ? "该视图中的下载会显示在这里。" : "粘贴链接、拖到本窗口，或在浏览器中发起下载。";
     $("empty-actions").hidden = !!q || state.items.length > 0;
   }
   return list;
@@ -251,15 +251,15 @@ function renderInspector() {
   if (insKey !== key) {
     insKey = key;
     panel.innerHTML = `<div class="ins-scroll">
-        <div class="ins-top"><span class="ins-glyph">${icon(cat(it).icon)}</span><div class="ins-head"><div class="ins-title">${esc(it.filename)}</div><div class="ins-meta" id="ins-chips"></div></div><button class="sq-btn" data-ins="close" title="Close (Esc)">${icon("x")}</button></div>
-        <div class="ins-sec"><div class="ins-sec-head">Progress<span id="ins-pct"></span></div><div class="segbar" id="ins-bar"></div><dl class="props" id="ins-stats"></dl></div>
-        <div class="ins-sec" id="ins-graph-sec"><div class="ins-sec-head">Speed<span id="ins-peak"></span></div><canvas id="ins-graph"></canvas></div>
-        <div class="ins-sec"><div class="ins-sec-head">Details</div><dl class="props" id="ins-props"></dl></div>
+        <div class="ins-top"><span class="ins-glyph">${icon(cat(it).icon)}</span><div class="ins-head"><div class="ins-title">${esc(it.filename)}</div><div class="ins-meta" id="ins-chips"></div></div><button class="sq-btn" data-ins="close" title="关闭（Esc）">${icon("x")}</button></div>
+        <div class="ins-sec"><div class="ins-sec-head">进度<span id="ins-pct"></span></div><div class="segbar" id="ins-bar"></div><dl class="props" id="ins-stats"></dl></div>
+        <div class="ins-sec" id="ins-graph-sec"><div class="ins-sec-head">速度<span id="ins-peak"></span></div><canvas id="ins-graph"></canvas></div>
+        <div class="ins-sec"><div class="ins-sec-head">详情</div><dl class="props" id="ins-props"></dl></div>
       </div>
       <div class="ins-foot" id="ins-foot"></div>`;
   }
   const finishing = dl && !!it.size && it.downloaded >= it.size;
-  const meta = `<span class="st-${it.status}">${finishing ? "Finishing…" : STATUS[it.status]}</span><span class="trunc">from ${esc(host(it.url))}</span>`;
+  const meta = `<span class="st-${it.status}">${finishing ? "正在收尾…" : STATUS[it.status]}</span><span class="trunc">来自 ${esc(host(it.url))}</span>`;
   if ($("ins-chips").innerHTML !== meta) $("ins-chips").innerHTML = meta;
 
   $("ins-pct").textContent = it.size ? `${Math.floor(pct(it))}%` : "";
@@ -268,30 +268,30 @@ function renderInspector() {
   segBar(bar, null, undefined, pct(it));
   const row = (k: string, v: string) => `<dt>${k}</dt><dd><span>${v}</span></dd>`;
   const stats = it.status === "completed"
-    ? row("Size", bytes(it.size)) + row("Finished", when(it.completedAt) || "—") + (it.verified ? row("Checksum", "SHA-256 matches") : "")
-    : row("Downloaded", it.size ? `${bytes(it.downloaded)} of ${bytes(it.size)}` : bytes(it.downloaded)) +
-      (dl && !finishing ? row("Speed", speed(it.speed)) + row("Time left", dur(eta(it))) : "") +
-      (dl && it.connections ? row("Connections", String(it.connections)) : "");
+    ? row("大小", bytes(it.size)) + row("已完成", when(it.completedAt) || "—") + (it.verified ? row("校验", "SHA-256 一致") : "")
+    : row("已下载", it.size ? `${bytes(it.downloaded)} / ${bytes(it.size)}` : bytes(it.downloaded)) +
+      (dl && !finishing ? row("速度", speed(it.speed)) + row("剩余时间", dur(eta(it))) : "") +
+      (dl && it.connections ? row("连接数", String(it.connections)) : "");
   if ($("ins-stats").innerHTML !== stats) $("ins-stats").innerHTML = stats;
 
   const hist = state.speedHist.get(it.id) || [];
   $("ins-graph-sec").hidden = !hist.some((v: number) => v > 0);
-  if (!$("ins-graph-sec").hidden) { areaChart($("ins-graph"), hist, { fill: false }); $("ins-peak").textContent = `Peak ${speed(Math.max(...hist))}`; }
+  if (!$("ins-graph-sec").hidden) { areaChart($("ins-graph"), hist, { fill: false }); $("ins-peak").textContent = `峰值 ${speed(Math.max(...hist))}`; }
 
   const dir = it.path.replace(/[\\/][^\\/]*$/, "");
   const props = `
-    <dt>Location</dt><dd><span class="link" data-ins="folder" title="${esc(it.path)}">${esc(dir)}</span><button class="copy" data-ins="copy-path" title="Copy path">${icon("copy")}</button></dd>
-    <dt>Source</dt><dd><span title="${esc(it.url)}">${esc(it.url)}</span><button class="copy" data-ins="copy" title="Copy link">${icon("copy")}</button></dd>
-    <dt>Resumable</dt><dd><span>${it.resumable ? "Yes" : "No, the server doesn't support it"}</span></dd>
-    <dt>Added</dt><dd><span>${new Date(it.addedAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span></dd>
-    ${it.error ? `<dt>Error</dt><dd><span style="color:var(--red)" title="${esc(it.error)}">${esc(it.error)}</span></dd>` : ""}`;
+    <dt>保存位置</dt><dd><span class="link" data-ins="folder" title="${esc(it.path)}">${esc(dir)}</span><button class="copy" data-ins="copy-path" title="复制路径">${icon("copy")}</button></dd>
+    <dt>来源</dt><dd><span title="${esc(it.url)}">${esc(it.url)}</span><button class="copy" data-ins="copy" title="复制链接">${icon("copy")}</button></dd>
+    <dt>可续传</dt><dd><span>${it.resumable ? "是" : "否，服务器不支持"}</span></dd>
+    <dt>添加时间</dt><dd><span>${new Date(it.addedAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span></dd>
+    ${it.error ? `<dt>错误</dt><dd><span style="color:var(--red)" title="${esc(it.error)}">${esc(it.error)}</span></dd>` : ""}`;
   if ($("ins-props").innerHTML !== props) $("ins-props").innerHTML = props;
 
-  const primary = it.status === "completed" ? `<button class="btn primary" data-ins="open">Open</button>`
-    : it.status === "error" ? `<button class="btn" data-ins="browser" title="Open the link in your browser, which downloads it with your own session">Download in browser</button><button class="btn primary" data-ins="resume">Retry</button>`
-    : isActive(it) ? `<button class="btn" data-ins="pause">Pause</button>`
-    : `<button class="btn primary" data-ins="resume">Resume</button>`;
-  const foot = `<button class="btn" data-ins="folder">Show in folder</button>${primary}<button class="btn icon" data-ins="more" title="More">${icon("more")}</button>`;
+  const primary = it.status === "completed" ? `<button class="btn primary" data-ins="open">打开</button>`
+    : it.status === "error" ? `<button class="btn" data-ins="browser" title="在浏览器中打开该链接，用你自己的登录会话下载">用浏览器下载</button><button class="btn primary" data-ins="resume">重试</button>`
+    : isActive(it) ? `<button class="btn" data-ins="pause">暂停</button>`
+    : `<button class="btn primary" data-ins="resume">继续</button>`;
+  const foot = `<button class="btn" data-ins="folder">在文件夹中显示</button>${primary}<button class="btn icon" data-ins="more" title="更多">${icon("more")}</button>`;
   if ($("ins-foot").innerHTML !== foot) $("ins-foot").innerHTML = foot;
 }
 
@@ -305,7 +305,7 @@ async function loadIntegration() {
   if (now?.lastSeen && now.lastSeen > before && (!before || $("dlg-ext").open)) {
     const who = now.browsers.filter((x) => x.lastSeen).sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0))[0];
     if ($("dlg-ext").open) $("dlg-ext").close();
-    if (loadedOnce) toast(`Connected in ${who?.name || "your browser"}`, "ok");
+    if (loadedOnce) toast(`已连接：${who?.name || "你的浏览器"}`, "ok");
   }
   loadedOnce = true;
   renderOnboard();
@@ -321,11 +321,11 @@ function renderOnboard() {
   // Until the extension is on the Chrome Web Store, store buttons would lead
   // to a missing page, so offer the guided manual install instead.
   const actions = i.storeAvailable
-    ? installedBrowsers().slice(0, 3).map((b) => `<button class="link-btn" data-store="${b.id}">Add to ${b.name}</button>`).join("")
-    : `<button class="link-btn" data-guide>Add the extension</button>`;
+    ? installedBrowsers().slice(0, 3).map((b) => `<button class="link-btn" data-store="${b.id}">添加到 ${b.name}</button>`).join("")
+    : `<button class="link-btn" data-guide>添加扩展</button>`;
   const html = `<span class="ob-icon">${icon("globe")}</span>
-    <span class="ob-text"><b>Connect your browser</b>Catch downloads automatically and get a download button on videos</span>
-    <span class="ob-actions">${actions}<button class="sq-btn" data-dismiss title="Dismiss">${icon("x")}</button></span>`;
+    <span class="ob-text"><b>连接你的浏览器</b>自动接管下载，并在视频上显示下载按钮</span>
+    <span class="ob-actions">${actions}<button class="sq-btn" data-dismiss title="忽略">${icon("x")}</button></span>`;
   // innerHTML never reads back identical, so compare with what we wrote last;
   // rebuilding it on every poll replaced the button mid-click.
   if (card.dataset.html !== html) { card.innerHTML = html; card.dataset.html = html; }
@@ -345,11 +345,11 @@ async function openExtensionGuide(browserId?: string) {
   $("ext-path").title = path;
   const b = installedBrowsers().find((x) => x.id === browserId);
   $("ext-step1").innerHTML = ff
-    ? "Firefox: open <code>about:debugging</code>, choose This Firefox, then Load Temporary Add-on and pick <code>manifest.json</code> in the folder below"
-    : `Type <code>${EXT_PAGE[browserId || ""] || "chrome://extensions"}</code> in the address bar${b ? `, or open it in ${b.name}:` : ""}`;
+    ? "Firefox：打开 <code>about:debugging</code>，选择“此 Firefox”，点“临时载入附加组件”，再选中下方文件夹中的 <code>manifest.json</code>"
+    : `在地址栏输入 <code>${EXT_PAGE[browserId || ""] || "chrome://extensions"}</code>${b ? `，或在 ${b.name} 中打开：` : ""}`;
   const choices = b ? [b] : installedBrowsers().filter((x) => x.id !== "firefox");
-  $("ext-browsers").innerHTML = choices.map((x) => `<button type="button" class="btn sm" data-open-ext="${x.id}"><img class="blogo sm" src="browsers/${x.id}.svg" alt="">Open in ${x.name}</button>`).join("");
-  $("ext-wait").textContent = "Waiting for the extension to connect…";
+  $("ext-browsers").innerHTML = choices.map((x) => `<button type="button" class="btn sm" data-open-ext="${x.id}"><img class="blogo sm" src="browsers/${x.id}.svg" alt="">在 ${x.name} 中打开</button>`).join("");
+  $("ext-wait").textContent = "正在等待扩展连接…";
   if (!$("dlg-ext").open) $("dlg-ext").showModal();
   if (b) openExtPage(b.id);
   // Check often while the guide is open, so it notices the connection at once.
@@ -360,13 +360,13 @@ async function openExtensionGuide(browserId?: string) {
   }, 1500);
 }
 async function openExtPage(id: string) {
-  copy($("ext-path").textContent || "", "Folder path copied, paste it into the picker");
+  copy($("ext-path").textContent || "", "已复制文件夹路径，可粘贴到选择框");
   try { await invoke("open_extensions_page", { browser: id }); }
   catch (e) { toast(esc(String(e)), "err"); }
 }
 $("ext-browsers").addEventListener("click", (e) => { const b = target(e).closest<HTMLElement>("[data-open-ext]"); if (b) openExtPage(b.dataset.openExt!); });
 $("ext-copy").innerHTML = icon("copy");
-$("ext-copy").onclick = () => copy($("ext-path").textContent || "", "Folder path copied");
+$("ext-copy").onclick = () => copy($("ext-path").textContent || "", "已复制文件夹路径");
 $("ext-open").onclick = () => call("open_extension_folder");
 $("ext-ff-store").onclick = (e) => { e.preventDefault(); openStore("firefox"); };
 $("onboard").addEventListener("click", async (e) => {
@@ -380,27 +380,27 @@ $("onboard").addEventListener("click", async (e) => {
 });
 async function openStore(browser: string) {
   await call("open_store", { browser });
-  toast(browser === "firefox" ? "Opened Firefox Add-ons. Click “Add to Firefox” there." : "Opened the extension page. Click “Add to browser” there.", "ok");
+  toast(browser === "firefox" ? "已打开 Firefox 扩展商店，请在那里点击“添加到 Firefox”。" : "已打开扩展页面，请在那里点击“添加到浏览器”。", "ok");
 }
 function renderBrowserPanel() {
   const i = state.integration;
   if (!i) return;
   const store = i.storeAvailable;
-  const hint = "Click Add next to a browser below";
+  const hint = "点击下方浏览器旁的“添加”";
   const connected = i.browsers.filter((b) => b.lastSeen).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
   const logo = (b: BrowserStatus, cls = "") => `<img class="blogo ${cls}" src="browsers/${b.id}.svg" alt="" width="28" height="28">`;
   $("ext-status").innerHTML = connected.length
-    ? `${logo(connected[0])}<div class="sr-text"><b>Connected in ${connected.map((b) => b.name).join(", ").replace(/, ([^,]*)$/, " and $1")}</b><span>Last active ${when(connected[0].lastSeen).toLowerCase()}</span></div>`
-    : `<div class="sr-text"><b>Not connected yet</b><span>${hint}</span></div>`;
+    ? `${logo(connected[0])}<div class="sr-text"><b>已连接：${connected.map((b) => b.name).join("、")}</b><span>最近活跃 ${when(connected[0].lastSeen)}</span></div>`
+    : `<div class="sr-text"><b>尚未连接</b><span>${hint}</span></div>`;
   const rank = (b: BrowserStatus) => (b.lastSeen ? 2 : b.installed ? 1 : 0);
   $("browser-list").innerHTML = [...i.browsers].sort((a, b) => rank(b) - rank(a)).map((b) => {
-    const sub = b.lastSeen ? `Connected · last active ${when(b.lastSeen).toLowerCase()}`
-      : !b.installed ? "Not installed"
-      : store && b.autoOffer ? "Installed · asks to enable the extension on next start" : "Installed";
+    const sub = b.lastSeen ? `已连接 · 最近活跃 ${when(b.lastSeen)}`
+      : !b.installed ? "未安装"
+      : store && b.autoOffer ? "已安装 · 下次启动时会提示启用扩展" : "已安装";
     return `<div class="set-row">
       ${logo(b, b.installed || b.lastSeen ? "" : "off")}
       <div class="sr-text"><b>${b.name}</b><span>${sub}</span></div>
-      ${!b.lastSeen && b.installed ? `<button type="button" class="btn sm" data-add="${b.id}">Add to ${b.name}</button>` : ""}</div>`;
+      ${!b.lastSeen && b.installed ? `<button type="button" class="btn sm" data-add="${b.id}">添加到 ${b.name}</button>` : ""}</div>`;
   }).join("");
   $("ext-saveas").hidden = !connected.length;
   // The automatic offer only works once the extension is on the store.
@@ -445,16 +445,16 @@ function askDelete(it: Item | null | undefined) {
   if (!it) return;
   const dlg = $("dlg-delete");
   const live = it.status !== "completed";
-  $("del-title").textContent = live ? "Cancel this download?" : "Remove from list?";
-  $("del-text").textContent = live ? `“${it.filename}” will stop and its partial data will be deleted.` : `“${it.filename}” will be removed from SwiftDL.`;
-  $("del-ok").textContent = live ? "Cancel download" : "Remove";
+  $("del-title").textContent = live ? "取消此下载？" : "从列表中移除？";
+  $("del-text").textContent = live ? `“${it.filename}” 将停止，已下载的部分数据会被删除。` : `“${it.filename}” 将从 SwiftDL 中移除。`;
+  $("del-ok").textContent = live ? "取消下载" : "移除";
   $("del-files").checked = false;
   $("del-files-row").hidden = live;
   dlg.returnValue = "";
   dlg.onclose = () => {
     if (dlg.returnValue !== "ok") return;
     call("remove", { ids: [it.id], deleteFiles: $("del-files").checked });
-    toast(live ? "Download cancelled" : "Removed from list", "ok");
+    toast(live ? "下载已取消" : "已从列表移除", "ok");
   };
   dlg.showModal();
 }
@@ -466,8 +466,8 @@ function act(name: string, it: Item | null | undefined, anchor?: HTMLElement) {
     case "pause": return pause([it.id]);
     case "resume": return resume([it.id]);
     case "browser": return void call("open_in_browser", { url: it.url });
-    case "copy": return void copy(it.url, "Link copied");
-    case "copy-path": return void copy(it.path, "Path copied");
+    case "copy": return void copy(it.url, "链接已复制");
+    case "copy-path": return void copy(it.path, "路径已复制");
     case "delete": return askDelete(it);
     case "more": { const r = anchor!.getBoundingClientRect(); return itemMenu(it, r.right - 220, r.top - 8, true); }
   }
@@ -500,28 +500,28 @@ function showMenu(x: number, y: number, entries: MenuLine[], above = false) {
 }
 async function downloadNext(it: Item) {
   const ok = await invoke("download_next", { id: it.id }).catch(() => false);
-  toast(ok ? "Will download next" : "It's not waiting in the queue", ok ? "ok" : undefined);
+  toast(ok ? "将作为下一个下载" : "它不在等待队列中", ok ? "ok" : undefined);
 }
 // A link that expired: copy the fresh one, then this carries on where it stopped.
 async function replaceLink(it: Item) {
   const url = await readClip();
-  if (!url) return toast("Copy the new link first, then choose this again");
-  try { await invoke("set_url", { id: it.id, url }); toast("Link replaced, resuming", "ok"); }
+  if (!url) return toast("请先复制新链接，再重新选择此项");
+  try { await invoke("set_url", { id: it.id, url }); toast("链接已替换，继续下载", "ok"); }
   catch (e) { toast(esc(String(e)), "err"); }
 }
 function itemMenu(it: Item, x: number, y: number, above = false) {
   showMenu(x, y, [
-    { icon: "open", label: "Open", keys: ["Enter"], enabled: it.status === "completed", run: () => act("open", it) },
-    { icon: "folder", label: "Show in folder", keys: ["O"], run: () => act("folder", it) },
+    { icon: "open", label: "打开", keys: ["Enter"], enabled: it.status === "completed", run: () => act("open", it) },
+    { icon: "folder", label: "在文件夹中显示", keys: ["O"], run: () => act("folder", it) },
     "-",
-    isActive(it) ? { icon: "pause", label: "Pause", keys: ["Space"], run: () => pause([it.id]) }
-      : { icon: it.status === "error" ? "retry" : "play", label: it.status === "error" ? "Retry" : "Resume", keys: ["Space"], enabled: it.status !== "completed", run: () => resume([it.id]) },
-    { icon: "play", label: "Download next", enabled: it.status === "queued", run: () => downloadNext(it) },
-    { icon: "open", label: "Download in browser", enabled: it.status === "error", run: () => act("browser", it) },
-    { icon: "link", label: "Replace link from clipboard", enabled: it.status === "error" || it.status === "paused", run: () => replaceLink(it) },
-    { icon: "link", label: "Copy link", keys: ["C"], run: () => act("copy", it) },
+    isActive(it) ? { icon: "pause", label: "暂停", keys: ["Space"], run: () => pause([it.id]) }
+      : { icon: it.status === "error" ? "retry" : "play", label: it.status === "error" ? "重试" : "继续", keys: ["Space"], enabled: it.status !== "completed", run: () => resume([it.id]) },
+    { icon: "play", label: "下一个下载", enabled: it.status === "queued", run: () => downloadNext(it) },
+    { icon: "open", label: "用浏览器下载", enabled: it.status === "error", run: () => act("browser", it) },
+    { icon: "link", label: "用剪贴板链接替换", enabled: it.status === "error" || it.status === "paused", run: () => replaceLink(it) },
+    { icon: "link", label: "复制链接", keys: ["C"], run: () => act("copy", it) },
     "-",
-    { icon: "trash", label: it.status === "completed" ? "Remove…" : "Cancel download…", keys: ["Del"], danger: true, run: () => askDelete(it) },
+    { icon: "trash", label: it.status === "completed" ? "移除…" : "取消下载…", keys: ["Del"], danger: true, run: () => askDelete(it) },
   ], above);
 }
 document.addEventListener("mousedown", (e) => { if (!target(e).closest<HTMLElement>("#menu") && !target(e).closest<HTMLElement>("#limit-btn") && !target(e).closest<HTMLElement>("[data-ins=more]")) $("menu").hidden = true; });
@@ -536,7 +536,7 @@ $("rows").addEventListener("click", async (e) => {
   const ids = state.items.filter((i) => i.status === "completed").map((i) => i.id);
   if (!ids.length) return;
   await call("remove", { ids, deleteFiles: false });
-  toast(`Cleared ${ids.length} from the list`, "ok");
+  toast(`已从列表中清空 ${ids.length} 项`, "ok");
 });
 $("rows").addEventListener("mousedown", (e) => {
   const r = target(e).closest<HTMLElement>(".row"), it = r ? byId(Number(r.dataset.id)) : undefined;
@@ -570,13 +570,13 @@ if (!appWindow) $("win-ctrls").hidden = true;
 
 async function setLimit(k: number) {
   await saveSettings({ ...settings(), speedLimitKib: k });
-  toast(k ? `Speed limited to ${bytes(k * 1024)}/s` : "Speed limit removed", "ok");
+  toast(k ? `已限速为 ${bytes(k * 1024)}/s` : "已取消限速", "ok");
 }
 const limitEntries = (): MenuLine[] => [
-  { title: "Speed limit" },
-  ...LIMITS.map((k): MenuEntry => ({ label: k ? `${bytes(k * 1024)}/s` : "No limit", checked: k === settings().speedLimitKib, run: () => setLimit(k) })),
+  { title: "速度限制" },
+  ...LIMITS.map((k): MenuEntry => ({ label: k ? `${bytes(k * 1024)}/s` : "不限速", checked: k === settings().speedLimitKib, run: () => setLimit(k) })),
   "-",
-  { icon: "sliders", label: "Custom…", run: () => openSettings("speed") },
+  { icon: "sliders", label: "自定义…", run: () => openSettings("speed") },
 ];
 $("limit-btn").onclick = (e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); showMenu(r.left, r.top - 6, limitEntries(), true); };
 
@@ -592,7 +592,7 @@ document.addEventListener("keydown", (e) => {
   else if (k === "ArrowUp" || k === "k") { e.preventDefault(); move(-1); }
   else if (k === " ") { e.preventDefault(); toggle(it); }
   else if (k === "Enter" && it) { e.preventDefault(); if (it.status === "completed") act("open", it); else toggle(it); }
-  else if ((k === "Delete" || k === "Backspace") && it) { e.preventDefault(); askDelete(it); }
+  else if ((k === "删除" || k === "Backspace") && it) { e.preventDefault(); askDelete(it); }
   else if (k === "o" && it) act("folder", it);
   else if (k === "c" && it) act("copy", it);
   else if (k === "n") openComposer();
@@ -626,23 +626,23 @@ function paletteItems(q: string): PalLine[] {
   const match = (s: string) => !q || s.toLowerCase().includes(q);
   const out: PalLine[] = [];
   const actions: PalItem[] = [
-    { icon: "plus", label: "New download", keys: ["Ctrl", "N"], run: () => openComposer() },
-    { icon: "pause", label: "Pause all downloads", run: () => pause(state.items.filter(isActive).map((i) => i.id)) },
-    { icon: "play", label: "Resume all downloads", run: () => resume(state.items.filter((i) => i.status === "paused" || i.status === "error").map((i) => i.id)) },
-    ...LIMITS.map((k): PalItem => ({ icon: "gauge", label: k ? `Limit speed to ${bytes(k * 1024)}/s` : "Remove speed limit", run: () => setLimit(k) })),
-    { icon: "settings", label: "Open settings", keys: ["Ctrl", ","], run: () => openSettings() },
-    { icon: "globe", label: "Set up browser extension", run: () => openExtensionGuide() },
+    { icon: "plus", label: "新建下载", keys: ["Ctrl", "N"], run: () => openComposer() },
+    { icon: "pause", label: "暂停全部下载", run: () => pause(state.items.filter(isActive).map((i) => i.id)) },
+    { icon: "play", label: "继续全部下载", run: () => resume(state.items.filter((i) => i.status === "paused" || i.status === "error").map((i) => i.id)) },
+    ...LIMITS.map((k): PalItem => ({ icon: "gauge", label: k ? `限制速度为 ${bytes(k * 1024)}/s` : "取消限速", run: () => setLimit(k) })),
+    { icon: "settings", label: "打开设置", keys: ["Ctrl", ","], run: () => openSettings() },
+    { icon: "globe", label: "设置浏览器扩展", run: () => openExtensionGuide() },
   ].filter((a) => match(a.label));
   const views: PalItem[] = [
-    ...Object.entries(VIEWS).map(([k, v]): PalItem => ({ icon: v.icon, label: `Go to ${v.name}`, run: () => { state.view = k; render(); } })),
-    ...Object.keys(CATS).map((c): PalItem => ({ type: c, label: `Go to ${c}`, run: () => { state.view = c; render(); } })),
+    ...Object.entries(VIEWS).map(([k, v]): PalItem => ({ icon: v.icon, label: `前往 ${v.name}`, run: () => { state.view = k; render(); } })),
+    ...Object.keys(CATS).map((c): PalItem => ({ type: c, label: `前往 ${catName(c)}`, run: () => { state.view = c; render(); } })),
   ].filter((a) => match(a.label));
   const dls = state.items.filter((i) => q && (i.filename.toLowerCase().includes(q) || i.url.toLowerCase().includes(q))).slice(0, 8)
     .map((i): PalItem => ({ status: i, label: i.filename, sub: STATUS[i.status], run: () => { state.view = "all"; select(i.id); } }));
-  if (dls.length) out.push({ title: "Downloads" }, ...dls);
-  if (actions.length) out.push({ title: "Actions" }, ...actions);
-  if (views.length && q) out.push({ title: "Navigation" }, ...views);
-  else if (!q) out.push({ title: "Navigation" }, ...views.slice(0, 4));
+  if (dls.length) out.push({ title: "下载" }, ...dls);
+  if (actions.length) out.push({ title: "操作" }, ...actions);
+  if (views.length && q) out.push({ title: "导航" }, ...views);
+  else if (!q) out.push({ title: "导航" }, ...views.slice(0, 4));
   return out;
 }
 function renderPalette() {
@@ -656,7 +656,7 @@ function renderPalette() {
     n++;
     const ic = i.status ? statusIcon(i.status) : i.type ? typeIcon(i.type) : icon(i.icon || "file");
     return `<button class="pal-item ${n === pal.sel ? "on" : ""}" data-n="${n}"><span class="pi-ic">${ic}</span><span class="pi-label">${esc(i.label)}${i.sub ? `<span class="pi-sub">${i.sub}</span>` : ""}</span>${i.keys ? `<span class="pi-right">${i.keys.map((k) => `<kbd>${k}</kbd>`).join("")}</span>` : ""}</button>`;
-  }).join("") : `<div class="pal-empty">No results for “${esc(q)}”</div>`;
+  }).join("") : `<div class="pal-empty">没有找到“${esc(q)}”</div>`;
   $("pal-list").querySelector(".pal-item.on")?.scrollIntoView({ block: "nearest" });
 }
 function openPalette() {
@@ -722,7 +722,7 @@ const readClip = (): Promise<string | undefined> => (navigator.clipboard?.readTe
 function setState(kind: "idle" | "loading" | "error" | "done", msg = "") {
   const el = $("add-state");
   el.className = `comp-state ${kind === "error" ? "err" : ""}`;
-  el.innerHTML = kind === "loading" ? `<span class="spinner"></span>Fetching file details…` : kind === "error" ? `${icon("alert")}${esc(msg)}` : kind === "idle" ? `SwiftDL checks the file's name and size before downloading.` : "";
+  el.innerHTML = kind === "loading" ? `<span class="spinner"></span>正在获取文件信息…` : kind === "error" ? `${icon("alert")}${esc(msg)}` : kind === "idle" ? `SwiftDL 会在下载前核对文件名与大小。` : "";
   el.hidden = kind === "done";
   $("add-start").disabled = $("add-later").disabled = kind !== "done";
 }
@@ -730,9 +730,9 @@ function renderChips() {
   const i = add.info;
   const folder = add.dir.split(/[\\/]/).filter(Boolean).slice(-2).join(" / ") || add.dir;
   $("add-chips").innerHTML = i ? [
-    `<span class="chip">${icon("hash")}<span>${i.size != null ? bytes(i.size) : "Unknown size"}</span></span>`,
-    `<span class="chip"><i class="dot" style="background:${(CATS[i.category] || CATS.Other).color}"></i><span>${esc(i.category)}</span></span>`,
-    i.resumable ? `<span class="chip ok">${icon("bolt")}<span>${state.settings?.connections || 8} connections</span></span>` : `<span class="chip warn">${icon("info")}<span>Single connection, no resume</span></span>`,
+    `<span class="chip">${icon("hash")}<span>${i.size != null ? bytes(i.size) : "大小未知"}</span></span>`,
+    `<span class="chip"><i class="dot" style="background:${(CATS[i.category] || CATS.Other).color}"></i><span>${esc(catName(i.category))}</span></span>`,
+    i.resumable ? `<span class="chip ok">${icon("bolt")}<span>${state.settings?.connections || 8} 个连接</span></span>` : `<span class="chip warn">${icon("info")}<span>单连接，不支持续传</span></span>`,
     `<button type="button" class="chip" id="add-folder" title="${esc(add.dir)}">${icon("folder")}<span>${esc(folder)}</span>${icon("chevDown")}</button>`,
   ].join("") : "";
 }
@@ -745,8 +745,8 @@ async function probe() {
       const [name, n] = await invoke("add_metalink", { url });
       $("dlg-add").close();
       if (state.view !== "all" && state.view !== "active") state.view = "all";
-      toast(`Downloading ${esc(name)} from ${n} address${n === 1 ? "" : "es"}`, "dl");
-    } catch (e) { setState("error", `Couldn't read that Metalink: ${e}`); }
+      toast(`正在从 ${n} 个地址下载 ${esc(name)}`, "dl");
+    } catch (e) { setState("error", `无法解析该 Metalink：${e}`); }
     return;
   }
   const seq = ++add.seq;
@@ -774,7 +774,7 @@ async function probe() {
   } catch (e) {
     if (seq !== add.seq) return;
     add.info = null; $("add-file").hidden = true; renderChips();
-    setState("error", `Couldn't reach that link: ${e}`);
+    setState("error", `无法访问该链接：${e}`);
   }
 }
 // ---------- find files on a page ----------
@@ -787,23 +787,23 @@ function grabVisible(): Found[] {
 function renderGrab() {
   const list = grabVisible();
   const cats = ["File", ...Object.keys(CATS).filter((c) => c !== "Other" && grab.all.some((f) => looksLikeFile(f.name) && catOf(f.name) === c)), "All"];
-  $("grab-chips").innerHTML = cats.map((c) => `<button type="button" class="chip${c === grab.cat ? " on" : ""}" data-c="${c}"><span>${c === "File" ? "All files" : c === "All" ? "Every link" : c}</span></button>`).join("");
-  $("grab-list").innerHTML = list.map((f) => `<label class="grab-row"><input type="checkbox" data-u="${esc(f.url)}"${grab.picked.has(f.url) ? " checked" : ""}><span class="gn" title="${esc(f.url)}">${esc(f.name || f.url)}</span><span class="gh">${esc(host(f.url))}</span></label>`).join("") || `<p class="muted" style="padding:10px 12px">Nothing here.</p>`;
+  $("grab-chips").innerHTML = cats.map((c) => `<button type="button" class="chip${c === grab.cat ? " on" : ""}" data-c="${c}"><span>${c === "File" ? "全部文件" : c === "All" ? "所有链接" : catName(c)}</span></button>`).join("");
+  $("grab-list").innerHTML = list.map((f) => `<label class="grab-row"><input type="checkbox" data-u="${esc(f.url)}"${grab.picked.has(f.url) ? " checked" : ""}><span class="gn" title="${esc(f.url)}">${esc(f.name || f.url)}</span><span class="gh">${esc(host(f.url))}</span></label>`).join("") || `<p class="muted" style="padding:10px 12px">这里没有任何文件。</p>`;
   const n = grab.picked.size;
   $("grab-go").disabled = !n;
-  $("grab-go").textContent = n ? `Download ${n} file${n === 1 ? "" : "s"}` : "Download";
-  $("grab-all").textContent = list.length && list.every((f) => grab.picked.has(f.url)) ? "Select none" : "Select all";
+  $("grab-go").textContent = n ? `下载 ${n} 个文件` : "下载";
+  $("grab-all").textContent = list.length && list.every((f) => grab.picked.has(f.url)) ? "全不选" : "全选";
 }
 async function loadGrab() {
   const url = $("grab-url").value.trim();
   if (!/^https?:\/\//i.test(url)) return;
-  $("grab-state").textContent = "Reading the page…";
+  $("grab-state").textContent = "正在读取页面…";
   try {
     grab.all = await invoke("grab_page", { url });
     grab.picked.clear();
-    $("grab-state").textContent = grab.all.length ? `${grabVisible().length} files on this page` : "No links found on this page";
+    $("grab-state").textContent = grab.all.length ? `${grabVisible().length} 个文件（本页）` : "此页面未找到链接";
     renderGrab();
-  } catch (e) { $("grab-state").textContent = `Couldn't read that page: ${e}`; }
+  } catch (e) { $("grab-state").textContent = `无法读取该页面：${e}`; }
 }
 $("add-grab").onclick = () => {
   const url = $("add-url").value.trim();
@@ -824,7 +824,7 @@ $("grab-go").onclick = async () => {
   const n = await invoke("add_links", { text: [...grab.picked].join("\n") }).catch(() => 0);
   $("dlg-grab").close();
   if (state.view !== "all" && state.view !== "active") state.view = "all";
-  toast(`Adding ${n} download${n === 1 ? "" : "s"}`, "dl");
+  toast(`正在添加 ${n} 个下载任务`, "dl");
 };
 
 // Several links, or a [01-50] pattern: add them all at once.
@@ -833,10 +833,10 @@ $("add-url").addEventListener("paste", async (e) => {
   if (!/\s/.test(text.trim()) && !/\[\d+-\d+\]/.test(text)) return;
   e.preventDefault();
   const n = await invoke("add_links", { text }).catch(() => 0);
-  if (!n) return toast("No links found in what you pasted", "err");
+  if (!n) return toast("粘贴内容中未找到链接", "err");
   $("dlg-add").close();
   if (state.view !== "all" && state.view !== "active") state.view = "all";
-  toast(`Adding ${n} download${n === 1 ? "" : "s"}`, "dl");
+  toast(`正在添加 ${n} 个下载任务`, "dl");
 });
 $("add-url").addEventListener("input", () => { clearTimeout(add.timer); add.timer = window.setTimeout(probe, 400); });
 $("add-chips").addEventListener("click", async (e) => {
@@ -844,7 +844,7 @@ $("add-chips").addEventListener("click", async (e) => {
   const dir = await call("pick_folder", { start: add.dir || null });
   if (dir) { add.dir = dir; add.dirTouched = true; renderChips(); }
 });
-$("add-paste").onclick = async () => { const u = await readClip(); if (u) { $("add-url").value = u; probe(); } else toast("No link on the clipboard"); };
+$("add-paste").onclick = async () => { const u = await readClip(); if (u) { $("add-url").value = u; probe(); } else toast("剪贴板中没有链接"); };
 $("add-x").onclick = () => $("dlg-add").close();
 $("add-later").onclick = () => submitAdd(false);
 $("form-add").addEventListener("submit", (e) => { e.preventDefault(); if (!$("add-start").disabled) submitAdd(true); });
@@ -857,7 +857,7 @@ async function submitAdd(start: boolean) {
   $("dlg-add").close();
   if (state.view !== "all" && state.view !== "active") state.view = "all";
   select(id);
-  toast(start ? `Downloading ${esc(filename)}` : `${esc(filename)} added for later`, start ? "dl" : "ok");
+  toast(start ? `正在下载 ${esc(filename)}` : `${esc(filename)} 已加入稍后下载`, start ? "dl" : "ok");
 }
 function nextPending() {
   if ($("dlg-add").open) return;
@@ -875,7 +875,7 @@ function nextPending() {
 const applyScale = (pct?: number) => { document.documentElement.style.zoom = String((pct && pct >= 80 && pct <= 160 ? pct : 100) / 100); };
 let setScale = 100, setDebridProvider = "realdebrid";
 // The local API needs a secret: make one when it is turned on without one.
-const apiHint = () => { $("set-api-hint").textContent = `Web remote: http://127.0.0.1:${$("set-api-port").value || 6800}   ·   For tools: /jsonrpc`; };
+const apiHint = () => { $("set-api-hint").textContent = `网页远程控制：http://127.0.0.1:${$("set-api-port").value || 6800}   ·   工具接口：/jsonrpc`; };
 $("set-api").addEventListener("change", () => {
   if ($("set-api").checked && !$("set-api-secret").value.trim()) {
     $("set-api-secret").value = [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -891,7 +891,7 @@ function renderWhenDone() {
   $("set-whendone").querySelectorAll<HTMLElement>("[data-v]").forEach((b) => b.classList.toggle("on", b.dataset.v === setWhenDone));
 }
 $("set-whendone").addEventListener("click", (e) => { const b = target(e).closest<HTMLElement>("[data-v]"); if (b) { setWhenDone = b.dataset.v!; renderWhenDone(); } });
-// "Start at 02:00" means the next 02:00: tonight, or tomorrow if it has passed.
+// "02:00 开始" means the next 02:00: tonight, or tomorrow if it has passed.
 function nextTime(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
   const d = new Date(); d.setHours(h, m, 0, 0);
@@ -901,7 +901,7 @@ function nextTime(hhmm: string): number {
 function renderStartAt() {
   const on = setStartAt > Date.now();
   $("set-startat").value = on ? new Date(setStartAt).toTimeString().slice(0, 5) : "";
-  $("set-startat-hint").textContent = on ? `Downloads wait until ${new Date(setStartAt).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "Downloads wait until this time, once";
+  $("set-startat-hint").textContent = on ? `下载将等到 ${new Date(setStartAt).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "下载任务将等到该时间，仅一次";
 }
 $("set-startat").addEventListener("change", () => { setStartAt = $("set-startat").value ? nextTime($("set-startat").value) : 0; renderStartAt(); });
 $("set-startat-clear").addEventListener("click", () => { setStartAt = 0; renderStartAt(); });
@@ -963,7 +963,7 @@ function openSettings(tab = "general") {
   $("dlg-settings").showModal();
 }
 function renderLimits() {
-  $("set-limits").innerHTML = LIMITS.map((k) => `<button type="button" data-k="${k}" class="${k === setLimitKib ? "on" : ""}">${k ? bytes(k * 1024) + "/s" : "Off"}</button>`).join("");
+  $("set-limits").innerHTML = LIMITS.map((k) => `<button type="button" data-k="${k}" class="${k === setLimitKib ? "on" : ""}">${k ? bytes(k * 1024) + "/s" : "不限速"}</button>`).join("");
   const c = $("set-limit-custom");
   if (document.activeElement !== c) c.value = LIMITS.includes(setLimitKib) ? "" : String(setLimitKib);
 }
@@ -1017,7 +1017,7 @@ $("form-settings").addEventListener("submit", async (e) => {
     startAt: setStartAt,
   });
   $("dlg-settings").close();
-  toast("Settings saved", "ok");
+  toast("设置已保存", "ok");
 });
 
 // ---------- data ----------
@@ -1046,10 +1046,10 @@ function renderUpdate(busy = false) {
   try { skipped = localStorage.getItem(SKIP_KEY) || ""; } catch {}
   card.hidden = !update || update.version === skipped;
   if (card.hidden || !update) return;
-  const install = update.asset ? (update.asset.endsWith(".exe") ? "Install and restart" : "Download") : "Get it";
+  const install = update.asset ? (update.asset.endsWith(".exe") ? "安装并重启" : "下载") : "获取";
   card.innerHTML = `<span class="ob-icon">${icon("download")}</span>
-    <span class="ob-text"><b>SwiftDL ${esc(update.version)} is available</b>${busy ? "Downloading the update…" : "You have " + esc(state.version)}</span>
-    <span class="ob-actions">${busy ? "" : `<button class="link-btn" data-notes>What's new</button><button class="link-btn" data-install>${install}</button><button class="sq-btn" data-skip title="Skip this version">${icon("x")}</button>`}</span>`;
+    <span class="ob-text"><b>SwiftDL ${esc(update.version)} 有可用更新</b>${busy ? "正在下载更新…" : "当前版本 " + esc(state.version)}</span>
+    <span class="ob-actions">${busy ? "" : `<button class="link-btn" data-notes>更新内容</button><button class="link-btn" data-install>${install}</button><button class="sq-btn" data-skip title="跳过此版本">${icon("x")}</button>`}</span>`;
 }
 async function checkUpdate() {
   try { update = await invoke("check_update"); } catch { return; }
@@ -1065,7 +1065,7 @@ $("update").addEventListener("click", async (e) => {
   } else if (b.hasAttribute("data-install")) {
     renderUpdate(true);
     try { await invoke("install_update", { url: update.asset || update.page }); renderUpdate(); }
-    catch (err) { renderUpdate(); toast(`Update failed: ${err}`); }
+    catch (err) { renderUpdate(); toast(`更新失败：${err}`); }
   }
 });
 async function boot() {
@@ -1076,7 +1076,7 @@ async function boot() {
   applyScale(s.settings.uiScale);
   state.pending = s.pending;
   state.version = s.version;
-  $("version").textContent = `Version ${s.version}`;
+  $("version").textContent = `版本 ${s.version}`;
   ingest(s.items);
   nextPending();
   loadIntegration();

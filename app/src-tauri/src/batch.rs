@@ -46,6 +46,6 @@ mod tests {
         assert_eq!(expand_links("https://a/1\nhttps://b/2 junk  http://c/3"), ["https://a/1", "https://b/2", "http://c/3"]);
         assert_eq!(expand_links("http://[::1]/file").len(), 1);
         assert_eq!(expand_links("https://x/a[1-9999].zip").len(), 1); // too many: left as typed
-        assert!(expand_links("no links here").is_empty());
+        assert!(expand_links("这里没有链接").is_empty());
     }
 }

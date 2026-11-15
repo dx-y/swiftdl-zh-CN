@@ -32,7 +32,7 @@ fn free_folder(dir: &Path, name: &str) -> PathBuf {
 /// Unpacks `archive` and returns the folder it went into.
 pub fn unpack(archive: &Path) -> Result<PathBuf> {
     let name = archive.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let kind = kind(&name).context("not an archive SwiftDL can unpack")?;
+    let kind = kind(&name).context("不是 SwiftDL 能解压的压缩包")?;
     let dir = archive.parent().unwrap_or(Path::new("."));
     let target = free_folder(dir, &stem(&name));
     std::fs::create_dir_all(&target)?;
@@ -50,7 +50,7 @@ pub fn unpack(archive: &Path) -> Result<PathBuf> {
 }
 
 fn unzip(archive: &Path, target: &Path) -> Result<()> {
-    let mut zip = zip::ZipArchive::new(std::fs::File::open(archive)?).context("not a valid zip file")?;
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(archive)?).context("不是有效的 zip 文件")?;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
         let Some(rel) = entry.enclosed_name() else { continue }; // unsafe path: skipped
@@ -69,18 +69,18 @@ fn unzip(archive: &Path, target: &Path) -> Result<()> {
 
 fn untar(reader: impl std::io::Read, target: &Path) -> Result<()> {
     // `unpack` refuses entries that would land outside `target`.
-    tar::Archive::new(reader).unpack(target).context("couldn't unpack the tar file")
+    tar::Archive::new(reader).unpack(target).context("无法解压 tar 文件")
 }
 
 fn un7z(archive: &Path, target: &Path) -> Result<()> {
-    let reader = sevenz_rust::SevenZReader::open(archive, sevenz_rust::Password::empty()).context("couldn't open the 7z file (it may be encrypted)")?;
+    let reader = sevenz_rust::SevenZReader::open(archive, sevenz_rust::Password::empty()).context("无法打开 7z 文件（可能已加密）")?;
     for entry in &reader.archive().files {
         let n = entry.name().replace('\\', "/");
         if n.starts_with('/') || n.split('/').any(|p| p == "..") || n.contains(':') {
             bail!("the archive has a path that leaves its folder: {n}");
         }
     }
-    sevenz_rust::decompress_file(archive, target).context("couldn't unpack the 7z file")
+    sevenz_rust::decompress_file(archive, target).context("无法解压 7z 文件")
 }
 
 #[cfg(test)]

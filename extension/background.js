@@ -55,7 +55,7 @@ async function sendToApp({ url, referrer, filename, qualities, pick }) {
     await new Promise((r) => setTimeout(r, 800));
     reply = await chrome.runtime.sendNativeMessage(HOST, message);
   }
-  if (!reply?.ok) throw new Error(reply?.error || "SwiftDL did not accept the download");
+  if (!reply?.ok) throw new Error(reply?.error || "SwiftDL 未接受该下载任务");
 }
 
 const ping = () =>
@@ -259,7 +259,7 @@ function dashQualities(xml, url) {
     ext: "mp4",
     size: secs ? Math.round(((v.bw + (a?.bw || 0)) * secs) / 8) : null,
   }));
-  if (a) list.push({ label: "Audio only", format: `dash|${url}||${a.id}`, ext: "m4a", size: secs ? Math.round((a.bw * secs) / 8) : null });
+  if (a) list.push({ label: "仅音频", format: `dash|${url}||${a.id}`, ext: "m4a", size: secs ? Math.round((a.bw * secs) / 8) : null });
   return list.length ? list : null;
 }
 
@@ -287,8 +287,8 @@ chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(key(t
 
 function createMenus() {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: "swiftdl-link", title: "Download with SwiftDL", contexts: ["link"] });
-    chrome.contextMenus.create({ id: "swiftdl-media", title: "Download with SwiftDL", contexts: ["video", "audio", "image"] });
+    chrome.contextMenus.create({ id: "swiftdl-link", title: "用 SwiftDL 下载", contexts: ["link"] });
+    chrome.contextMenus.create({ id: "swiftdl-media", title: "用 SwiftDL 下载", contexts: ["video", "audio", "image"] });
   });
 }
 chrome.runtime.onInstalled.addListener(() => { createMenus(); ping(); });

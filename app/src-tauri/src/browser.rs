@@ -109,7 +109,7 @@ pub fn register(data_dir: &Path) -> Result<()> {
     let exe = std::env::current_exe()?;
     let manifest = json!({
         "name": HOST_NAME,
-        "description": "SwiftDL download manager",
+        "description": "SwiftDL 下载管理器",
         "path": exe,
         "type": "stdio",
         "allowed_origins": EXTENSION_IDS.iter().map(|id| format!("chrome-extension://{id}/")).collect::<Vec<_>>(),
@@ -175,7 +175,7 @@ fn chromium_profile_dirs(home: &Path) -> Vec<PathBuf> {
 fn register_firefox(data_dir: &Path, exe: &Path) -> Result<()> {
     let manifest = json!({
         "name": HOST_NAME,
-        "description": "SwiftDL download manager",
+        "description": "SwiftDL 下载管理器",
         "path": exe,
         "type": "stdio",
         "allowed_extensions": [FIREFOX_ID],

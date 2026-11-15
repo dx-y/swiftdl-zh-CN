@@ -77,10 +77,10 @@ fn check_add(req: &AddRequest) -> Result<(), String> {
     let web = url.starts_with("http://") || url.starts_with("https://") || crate::ftp::is_ftp(url);
     let torrent = req.torrent_files.is_some() && (url.starts_with("magnet:") || std::path::Path::new(url).is_file());
     if !web && !torrent {
-        return Err("Only web, ftp and magnet links and .torrent files are supported".into());
+        return Err("仅支持网页、FTP、磁力链接和 .torrent 文件".into());
     }
     if req.filename.trim().is_empty() {
-        return Err("File name is empty".into());
+        return Err("文件名为空".into());
     }
     Ok(())
 }
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn refuses_other_sources() {
-        assert!(check_add(&req("magnet:?xt=urn:btih:abc", false)).is_err(), "magnet only as a torrent");
+        assert!(check_add(&req("magnet:?xt=urn:btih:abc", false)).is_err(), "磁力链接只能作为种子下载");
         assert!(check_add(&req("file:///etc/passwd", false)).is_err());
         assert!(check_add(&req("C:/not/there.torrent", true)).is_err());
     }
@@ -133,13 +133,13 @@ pub fn remove(m: Mgr, ids: Vec<u64>, delete_files: bool) {
 
 #[tauri::command]
 pub fn open_file(m: Mgr, id: u64) -> Result<(), String> {
-    let item = m.item(id).ok_or("not found")?;
+    let item = m.item(id).ok_or("未找到")?;
     m.app_handle().opener().open_path(item.path.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn open_folder(m: Mgr, id: u64) -> Result<(), String> {
-    let item = m.item(id).ok_or("not found")?;
+    let item = m.item(id).ok_or("未找到")?;
     let target = if item.path.exists() { item.path.clone() } else { swiftdl_engine::part_path(&item.path) };
     if target.exists() {
         m.app_handle().opener().reveal_item_in_dir(target).map_err(|e| e.to_string())
@@ -166,7 +166,7 @@ pub fn extension_dir(m: Mgr) -> Option<PathBuf> {
 
 #[tauri::command]
 pub fn open_extension_folder(m: Mgr) -> Result<(), String> {
-    let dir = crate::browser::bundled_extension_dir(m.app_handle()).ok_or("extension folder not found")?;
+    let dir = crate::browser::bundled_extension_dir(m.app_handle()).ok_or("未找到扩展文件夹")?;
     m.app_handle().opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
 }
 
@@ -260,7 +260,7 @@ pub async fn probe_media(m: Mgr<'_>, url: String, headers: Vec<(String, String)>
 pub fn open_in_browser(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let base = url.trim().split('#').next().unwrap_or_default().to_string();
     if !(base.starts_with("http://") || base.starts_with("https://")) {
-        return Err("That isn't a web link".into());
+        return Err("这不是网页链接".into());
     }
     app.opener().open_url(format!("{base}#swiftdl-browser"), None::<&str>).map_err(|e| e.to_string())
 }
@@ -268,15 +268,15 @@ pub fn open_in_browser(app: tauri::AppHandle, url: String) -> Result<(), String>
 /// Site grabber: the links on one web page, for the user to pick from.
 #[tauri::command]
 pub async fn grab_page(m: Mgr<'_>, url: String) -> Result<Vec<crate::grabber::Found>, String> {
-    let page = url::Url::parse(url.trim()).map_err(|_| "That isn't a web link".to_string())?;
+    let page = url::Url::parse(url.trim()).map_err(|_| "这不是网页链接".to_string())?;
     if !matches!(page.scheme(), "http" | "https") {
-        return Err("That isn't a web link".into());
+        return Err("这不是网页链接".into());
     }
     let resp = m.client().get(page.as_str()).send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?;
     let final_url = resp.url().clone();
     // A page is text; a huge or binary answer is a file, not a page to read.
     if resp.content_length().is_some_and(|n| n > 8_000_000) {
-        return Err("That's a large file, not a web page".into());
+        return Err("这是一个大文件，不是网页".into());
     }
     let html = resp.text().await.map_err(|e| e.to_string())?;
     Ok(crate::grabber::find_links(&html, &final_url))
