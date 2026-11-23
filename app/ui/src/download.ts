@@ -24,10 +24,14 @@ const view = $("view");
 const fit = () => {
   if (!win || !LogicalSize) return;
   // The card plus the 16px transparent margin on each side (for its shadow).
-  const h = Math.ceil($("root").getBoundingClientRect().height) + 32;
-  win.setSize(new LogicalSize(552, Math.min(780, h)));
+  const root = $("root");
+  const h = Math.ceil(Math.max(root.getBoundingClientRect().height, root.scrollHeight)) + 32;
+  // A resize that fails (or lands before the layout settles) must not leave the buttons cut off.
+  Promise.resolve(win.setSize(new LogicalSize(552, Math.min(780, h)))).catch(() => setTimeout(fit, 400));
 };
 new ResizeObserver(fit).observe($("root"));
+// Again once the page and fonts have settled; some screens report their size late.
+window.addEventListener("load", () => [100, 400, 1200].forEach((t) => setTimeout(fit, t)));
 const setTitle = (t: string) => { $("w-title").textContent = t; document.title = t; win?.setTitle(t); };
 
 $("w-min").onclick = () => win?.minimize();
@@ -71,6 +75,7 @@ async function confirmView(token: number) {
       <span class="k">大小</span><span class="v" id="c-size"><span class="spinner"></span><span class="muted">正在检查…</span></span>
       <span class="k">分类</span><span class="v"><select id="c-cat">${Object.keys(CATS).map((c) => `<option value="${c}">${catName(c)}</option>`).join("")}</select></span>
       <span class="k">保存到</span><span class="v"><span class="path" id="c-dir" title=""></span><button class="btn sm" id="c-browse">更改</button></span>
+      <span class="k">镜像地址</span><span class="v"><input id="c-mirrors" spellcheck="false" title="同一文件的其他地址。各地址之间共享分段，失效的地址会被跳过。" placeholder="可选：同一文件的其他链接"></span>
       <span class="k">SHA-256</span><span class="v"><input id="c-sum" spellcheck="false" placeholder="可选：粘贴以校验文件"></span>
     </div>
     <div class="d-foot">
@@ -90,7 +95,7 @@ async function confirmView(token: number) {
     $("c-cat").value = info.category;
     $("c-tile").innerHTML = glyph(info.category, $("c-name").value);
     setDir(info.dir);
-    $("c-size").innerHTML = `<span>${info.size != null ? bytes(info.size) : "大小未知"}</span><span class="muted">${info.resumable ? `支持续传 · ${settings.connections} 个连接` : "不支持续传 · 单连接"}</span>`;
+    $("c-size").innerHTML = `<span>${info.size != null ? bytes(info.size) : "大小未知"}</span><span class="muted">${info.resumable ? `支持续传 · 最多 ${settings.connections} 个连接` : "不支持续传 · 单连接"}</span>`;
     $("c-start").disabled = false;
   } catch (e) {
     $("c-name").value = inc.filename || "download";
@@ -100,13 +105,16 @@ async function confirmView(token: number) {
   $("c-cat").onchange = () => { $("c-tile").innerHTML = glyph($("c-cat").value, $("c-name").value); if (!dirTouched) setDir(dirFor($("c-cat").value)); };
   $("c-browse").onclick = async () => { const d = await invoke("pick_folder", { start: dir }); if (d) { setDir(d); dirTouched = true; } };
   $("c-sum").addEventListener("input", () => $("c-sum").classList.remove("bad"));
+  $("c-mirrors").addEventListener("input", () => $("c-mirrors").classList.remove("bad"));
   $("c-cancel").onclick = () => { invoke("forget_confirm", { token }); $("w-close").click(); };
   const add = async (start: boolean) => {
     const filename = $("c-name").value.trim();
     if (!filename) return;
     const sum = $("c-sum").value.trim().toLowerCase();
     if (sum && !/^[a-f0-9]{64}$/.test(sum)) { $("c-sum").classList.add("bad"); $("c-sum").title = "SHA-256 为 64 位字母与数字"; $("c-sum").focus(); return; }
-    const id = await addDownload({ url: inc.url, filename, dir, headers, start, window: win?.label, checksum: sum || null });
+    const mirrors = $("c-mirrors").value.split(/[\s,]+/).filter(Boolean);
+    if (mirrors.some((m) => !/^https?:\/\/\S+$/i.test(m))) { $("c-mirrors").classList.add("bad"); $("c-mirrors").title = "镜像地址必须是 http(s) 链接，用空格或逗号分隔"; $("c-mirrors").focus(); return; }
+    const id = await addDownload({ url: inc.url, filename, dir, headers, start, window: win?.label, checksum: sum || null, mirrors });
     if (id == null) return;
     invoke("forget_confirm", { token });
     if (!start) { $("w-close").click(); return; }
@@ -174,7 +182,7 @@ async function mediaView(token: number, inc: Incoming, settings: Settings, heade
     $("c-q").innerHTML = `<select id="c-qs">${info.qualities.map((q, i) => `<option value="${i}">${esc(q.label)}${q.size ? ` · ${bytes(q.size)}` : ""}</option>`).join("")}</select>`;
     // Default to the best quality up to 1080p: 4K files are huge, and
     // they're one click away.
-    const preferred = known && inc.pick != null ? inc.pick : info.qualities.findIndex((q) => /^\d+p/.test(q.label) && parseInt(q.label) <= 1080);
+    const preferred = known && inc.pick != null ? inc.pick : info.qualities.findIndex((q) => /^\d+p/.test(q.label) && parseInt(q.label) <= 1080 && !/HDR/.test(q.label));
     $("c-qs").value = String(Math.max(0, preferred));
     $("c-qs").onchange = applyQuality;
     styledSelect($("c-qs") as HTMLSelectElement);

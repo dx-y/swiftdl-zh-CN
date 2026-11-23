@@ -1,13 +1,13 @@
 > **简体中文汉化版（非官方 fork）**
 >
-> 本仓库基于上游 [harshsinghsv/swiftdl](https://github.com/harshsinghsv/swiftdl) **v0.4.1** 源码完成界面中文化，
+> 本仓库基于上游 [harshsinghsv/swiftdl](https://github.com/harshsinghsv/swiftdl) **v0.4.3** 源码完成界面中文化，
 > 遵循上游 MIT 许可，版权与署名归原作者所有。本 fork 只做文案翻译与本地重编译，未改动任何下载逻辑，未加入任何联网上报。
 >
-> - **汉化范围**：主界面、新建下载浮层、设置四个页面、任务卡与右键菜单、托盘菜单、系统通知、运行状态与错误提示、搜索命令面板、浏览器扩展（popup / 页面视频面板 / 右键菜单 / 名称与描述）、手机远程控制页
+> - **汉化范围**：主界面、新建下载浮层（含镜像地址、视频链接）、YouTube 播放列表选择窗口、多选批量操作与批量删除确认框、设置四个页面、任务卡与右键菜单、托盘菜单、系统通知、运行状态与错误提示、搜索命令面板、浏览器扩展（popup / 页面视频面板 / 右键菜单 / 名称与描述）、手机远程控制页
 > - **刻意保留英文**：分类目录名 `Video / Music / Programs / Compressed / Documents / Images / Other`（同时是下载子文件夹名与程序内部判定依据，翻译会导致分类失效）、软件与浏览器品牌名、`KB/s` 等单位
 > - **与官方版并存**：应用标识改为 `com.swiftdl.app.cn`，数据目录与单实例锁独立，可与官方版同时运行
 > - **构建**：`cd app && npm ci && npm run build`，再 `cd app/src-tauri && cargo build --release --features custom-protocol`（漏掉该 feature 会白屏并报 `ERR_CONNECTION_REFUSED`）
-> - **上游更新后如何同步**：[docs/SYNC-zh-CN.md](docs/SYNC-zh-CN.md)（含 `tools/apply-zh.py` 幂等重放与复验清单）
+> - **上游更新后如何同步**：[docs/SYNC-zh-CN.md](docs/SYNC-zh-CN.md)（含 `tools/apply-zh.py` 幂等重放与复验清单；`.github/workflows/upstream-watch.yml` 每天检查上游正式版并自动重放，跳过测试版，上游若自带简中则停手）
 
 <div align="center">
 

@@ -51,12 +51,12 @@ const HISTORY = 120;
 const LIMITS = [0, 256, 1024, 5120, 10240];
 interface State {
   version: string;
-  items: Item[]; settings: Settings | null; view: string; search: string; selected: number | null; pending: Incoming[];
+  items: Item[]; settings: Settings | null; view: string; search: string; selected: number | null; picked: Set<number>; pending: Incoming[];
   speedHist: Map<number, number[]>; totalHist: number[]; typesOpen: boolean; integration: IntegrationStatus | null;
 }
 const state: State = {
   version: "",
-  items: [], settings: null, view: "all", search: "", selected: null, pending: [],
+  items: [], settings: null, view: "all", search: "", selected: null, picked: new Set<number>(), pending: [],
   speedHist: new Map(), totalHist: [], typesOpen: true, integration: null,
 };
 const settings = (): Settings => state.settings as Settings;
@@ -202,7 +202,7 @@ function meta(it: Item) {
   }
 }
 function updateRow(el: RowEl, it: Item) {
-  el.classList.toggle("sel", state.selected === it.id);
+  el.classList.toggle("sel", state.selected === it.id || state.picked.has(it.id));
   set(el, 0, statusIcon(it));
   const e = ext(it.filename);
   set(el, 1, `<span class="r-name" title="${esc(it.filename)}">${esc(it.filename.replace(/\.[^.]+$/, "") || it.filename)}</span>${e ? `<span class="r-ext">${e}</span>` : ""}${it.status === "error" ? `<span class="r-err">${esc(it.error || "失败")}</span>` : ""}`);
@@ -411,6 +411,7 @@ $("browser-list").addEventListener("click", (e) => { const b = target(e).closest
 
 function render() {
   if (state.selected != null && !byId(state.selected)) state.selected = null;
+  for (const id of [...state.picked]) if (!byId(id)) state.picked.delete(id);
   const list = renderList();
   renderNav();
   renderHeader(list);
@@ -457,6 +458,40 @@ function askDelete(it: Item | null | undefined) {
     toast(live ? "下载已取消" : "已从列表移除", "ok");
   };
   dlg.showModal();
+}
+// The downloads marked with Ctrl/Shift+click, or just the selected one.
+const chosen = (): Item[] => {
+  const ids = new Set(state.picked);
+  if (state.selected != null) ids.add(state.selected);
+  return state.items.filter((i) => ids.has(i.id));
+};
+function askDeleteMany(items: Item[]) {
+  if (items.length < 2) return askDelete(items[0]);
+  const dlg = $("dlg-delete");
+  const live = items.filter((i) => i.status !== "completed").length;
+  $("del-title").textContent = `移除 ${items.length} 个下载？`;
+  $("del-text").textContent = live ? `其中 ${live} 个仍在下载或等待的会停止，已下载的部分数据会被删除，其余将从 SwiftDL 移除。` : `这 ${items.length} 个下载将从 SwiftDL 中移除。`;
+  $("del-ok").textContent = `移除 ${items.length} 个`;
+  $("del-files").checked = false;
+  $("del-files-row").hidden = live === items.length;
+  dlg.returnValue = "";
+  dlg.onclose = () => {
+    if (dlg.returnValue !== "ok") return;
+    call("remove", { ids: items.map((i) => i.id), deleteFiles: $("del-files").checked });
+    state.picked.clear();
+    toast(`已移除 ${items.length} 个下载`, "ok");
+  };
+  dlg.showModal();
+}
+function manyMenu(items: Item[], x: number, y: number) {
+  const ids = items.map((i) => i.id);
+  showMenu(x, y, [
+    { title: `已选中 ${items.length} 个下载` },
+    { icon: "pause", label: `暂停 ${items.length} 个`, run: () => pause(ids) },
+    { icon: "play", label: `继续 ${items.length} 个`, run: () => resume(ids) },
+    "-",
+    { icon: "trash", label: `移除 ${items.length} 个…`, danger: true, run: () => askDeleteMany(items) },
+  ]);
 }
 function act(name: string, it: Item | null | undefined, anchor?: HTMLElement) {
   if (!it) return;
@@ -542,9 +577,22 @@ $("rows").addEventListener("mousedown", (e) => {
   const r = target(e).closest<HTMLElement>(".row"), it = r ? byId(Number(r.dataset.id)) : undefined;
   if (!it || e.button !== 0) return;
   if (e.detail === 2) { if (it.status === "completed") act("open", it); else toggle(it); return; }
+  // Ctrl/Cmd+click adds or removes one; Shift+click takes everything in between.
+  if (e.ctrlKey || e.metaKey) {
+    if (state.selected != null) state.picked.add(state.selected);
+    if (state.picked.has(it.id) && state.selected !== it.id) state.picked.delete(it.id); else state.picked.add(it.id);
+    state.selected = it.id;
+    render();
+    return;
+  }
+  if (e.shiftKey && state.selected != null) {
+    const ids = orderIds(), a = ids.indexOf(state.selected), b = ids.indexOf(it.id);
+    if (a >= 0 && b >= 0) { state.picked = new Set(ids.slice(Math.min(a, b), Math.max(a, b) + 1)); render(); return; }
+  }
+  state.picked.clear();
   select(it.id, false);
 });
-$("rows").addEventListener("contextmenu", (e) => { const r = target(e).closest<HTMLElement>(".row"); const it = r ? byId(Number(r.dataset.id)) : undefined; if (it) { e.preventDefault(); itemMenu(it, e.clientX, e.clientY); } });
+$("rows").addEventListener("contextmenu", (e) => { const r = target(e).closest<HTMLElement>(".row"); const it = r ? byId(Number(r.dataset.id)) : undefined; if (it && state.picked.size > 1 && state.picked.has(it.id)) { e.preventDefault(); manyMenu(chosen(), e.clientX, e.clientY); } else if (it) { e.preventDefault(); itemMenu(it, e.clientX, e.clientY); } });
 $("list").addEventListener("mousedown", (e) => { if (!target(e).closest<HTMLElement>(".row") && !target(e).closest<HTMLElement>(".ghead") && !target(e).closest<HTMLElement>(".empty") && state.selected != null) { state.selected = null; render(); } });
 $("inspector").addEventListener("click", (e) => {
   const b = target(e).closest<HTMLElement>("[data-ins]");
@@ -587,17 +635,18 @@ document.addEventListener("keydown", (e) => {
   const it = byId(state.selected);
   if (mod && k.toLowerCase() === "n") { e.preventDefault(); openComposer(); }
   else if (mod && k === ",") { e.preventDefault(); openSettings(); }
+  else if (mod && k.toLowerCase() === "a") { e.preventDefault(); state.picked = new Set(orderIds()); render(); }
   else if (mod) return;
   else if (k === "ArrowDown" || k === "j") { e.preventDefault(); move(1); }
   else if (k === "ArrowUp" || k === "k") { e.preventDefault(); move(-1); }
   else if (k === " ") { e.preventDefault(); toggle(it); }
   else if (k === "Enter" && it) { e.preventDefault(); if (it.status === "completed") act("open", it); else toggle(it); }
-  else if ((k === "删除" || k === "Backspace") && it) { e.preventDefault(); askDelete(it); }
+  else if ((k === "Delete" || k === "Backspace") && (it || state.picked.size)) { e.preventDefault(); askDeleteMany(chosen()); }
   else if (k === "o" && it) act("folder", it);
   else if (k === "c" && it) act("copy", it);
   else if (k === "n") openComposer();
   else if (k === "/") { e.preventDefault(); openPalette(); }
-  else if (k === "Escape") { state.selected = null; render(); }
+  else if (k === "Escape") { state.selected = null; state.picked.clear(); render(); }
 });
 
 const firstUrl = (t: string | null | undefined) => (t || "").split(/\s+/).find((s) => /^(https?:\/\/|magnet:\?)\S+$/i.test(s));
@@ -732,13 +781,19 @@ function renderChips() {
   $("add-chips").innerHTML = i ? [
     `<span class="chip">${icon("hash")}<span>${i.size != null ? bytes(i.size) : "大小未知"}</span></span>`,
     `<span class="chip"><i class="dot" style="background:${(CATS[i.category] || CATS.Other).color}"></i><span>${esc(catName(i.category))}</span></span>`,
-    i.resumable ? `<span class="chip ok">${icon("bolt")}<span>${state.settings?.connections || 8} 个连接</span></span>` : `<span class="chip warn">${icon("info")}<span>单连接，不支持续传</span></span>`,
+    i.resumable ? `<span class="chip ok">${icon("bolt")}<span>最多 ${state.settings?.connections || 8} 个连接</span></span>` : `<span class="chip warn">${icon("info")}<span>单连接，不支持续传</span></span>`,
     `<button type="button" class="chip" id="add-folder" title="${esc(add.dir)}">${icon("folder")}<span>${esc(folder)}</span>${icon("chevDown")}</button>`,
   ].join("") : "";
 }
 async function probe() {
   const url = $("add-url").value.trim();
   if (!/^(https?:\/\/|ftp:\/\/|magnet:\?)\S+/i.test(url)) { add.info = null; $("add-file").hidden = true; renderChips(); if (url) setState("error", "Paste a web link (http://, https:// or ftp://) or a magnet link"); else setState("idle"); return; }
+  // A playlist page: choose which videos, and video or audio.
+  if (await invoke("is_playlist_url", { url }).catch(() => false)) {
+    $("dlg-add").close();
+    openPlaylist(url);
+    return;
+  }
   // A Metalink lists several mirrors of one file: download from all of them.
   if (/\.(meta4|metalink)(\?|#|$)/i.test(url)) {
     try {
@@ -777,6 +832,44 @@ async function probe() {
     setState("error", `无法访问该链接：${e}`);
   }
 }
+// ---------- playlists ----------
+type PlEntry = { url: string; title: string; duration: number | null };
+const pl = { items: [] as PlEntry[], picked: new Set<string>(), mode: "high" };
+const length = (s: number | null) => (s ? (s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`) : "");
+function renderPlaylist() {
+  $("pl-chips").querySelectorAll<HTMLElement>("[data-m]").forEach((c) => c.classList.toggle("on", c.dataset.m === pl.mode));
+  $("pl-list").innerHTML = pl.items.map((f) => `<label class="grab-row"><input type="checkbox" data-u="${esc(f.url)}"${pl.picked.has(f.url) ? " checked" : ""}><span class="gn" title="${esc(f.title)}">${esc(f.title)}</span><span class="gh">${length(f.duration)}</span></label>`).join("");
+  const n = pl.picked.size;
+  $("pl-go").disabled = !n;
+  $("pl-go").textContent = n ? `下载 ${n} 个视频` : "下载";
+  $("pl-all").textContent = pl.items.length && pl.picked.size === pl.items.length ? "全不选" : "全选";
+}
+async function openPlaylist(url: string) {
+  pl.items = []; pl.picked.clear(); pl.mode = "high";
+  $("pl-title").textContent = "";
+  $("pl-state").textContent = "正在读取播放列表…";
+  renderPlaylist();
+  $("dlg-playlist").showModal();
+  try {
+    const info = await invoke("probe_playlist", { url });
+    pl.items = info.entries; pl.picked = new Set(info.entries.map((e) => e.url));
+    $("pl-title").textContent = info.title;
+    $("pl-state").textContent = `共 ${info.entries.length} 个视频`;
+    renderPlaylist();
+  } catch (e) { $("pl-state").textContent = `无法读取该播放列表：${e}`; }
+}
+$("pl-x").onclick = () => $("dlg-playlist").close();
+$("pl-chips").addEventListener("click", (e) => { const b = target(e).closest<HTMLElement>("[data-m]"); if (b) { pl.mode = b.dataset.m!; renderPlaylist(); } });
+$("pl-list").addEventListener("change", (e) => { const i = target(e) as HTMLInputElement; if (i.dataset.u) { i.checked ? pl.picked.add(i.dataset.u) : pl.picked.delete(i.dataset.u); renderPlaylist(); } });
+$("pl-all").onclick = () => { pl.picked = pl.picked.size === pl.items.length ? new Set() : new Set(pl.items.map((e) => e.url)); renderPlaylist(); };
+$("pl-go").onclick = async () => {
+  const entries = pl.items.filter((e) => pl.picked.has(e.url)).map((e) => ({ url: e.url, title: e.title }));
+  const n = await invoke("add_playlist", { entries, mode: pl.mode }).catch(() => 0);
+  $("dlg-playlist").close();
+  if (state.view !== "all" && state.view !== "active") state.view = "all";
+  toast(`正在添加 ${n} 个下载`, "dl");
+};
+
 // ---------- find files on a page ----------
 type Found = { url: string; name: string };
 const grab = { all: [] as Found[], picked: new Set<string>(), cat: "File", q: "" };
@@ -873,7 +966,9 @@ function nextPending() {
 // ---------- settings ----------
 // Interface size: the whole window scales (the download windows keep their size).
 const applyScale = (pct?: number) => { document.documentElement.style.zoom = String((pct && pct >= 80 && pct <= 160 ? pct : 100) / 100); };
-let setScale = 100, setDebridProvider = "realdebrid";
+let setScale = 100, setDebridProvider = "realdebrid", setVideoDef = "ask";
+function renderVideoDef() { $("set-videodef").querySelectorAll<HTMLElement>("[data-v]").forEach((b) => b.classList.toggle("on", b.dataset.v === setVideoDef)); }
+$("set-videodef").addEventListener("click", (e) => { const b = target(e).closest<HTMLElement>("[data-v]"); if (b) { setVideoDef = b.dataset.v!; renderVideoDef(); } });
 // The local API needs a secret: make one when it is turned on without one.
 const apiHint = () => { $("set-api-hint").textContent = `网页远程控制：http://127.0.0.1:${$("set-api-port").value || 6800}   ·   工具接口：/jsonrpc`; };
 $("set-api").addEventListener("change", () => {
@@ -946,6 +1041,8 @@ function openSettings(tab = "general") {
   renderDebridProvider();
   setScale = s.uiScale || 100;
   renderScale();
+  setVideoDef = s.videoDefault || "ask";
+  renderVideoDef();
   $("set-api").checked = s.apiEnabled;
   $("set-api-port").value = String(s.apiPort || 6800);
   $("set-api-secret").value = s.apiSecret || "";
@@ -1003,6 +1100,7 @@ $("form-settings").addEventListener("submit", async (e) => {
     debridProvider: setDebridProvider,
     debridToken: $("set-debrid").value.trim(),
     uiScale: setScale,
+    videoDefault: setVideoDef,
     apiEnabled: $("set-api").checked && !!$("set-api-secret").value.trim(),
     apiPort: clamp($("set-api-port").value, 1024, 65535, 6800),
     apiSecret: $("set-api-secret").value.trim(),

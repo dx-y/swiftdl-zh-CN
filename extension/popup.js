@@ -46,6 +46,13 @@ async function main() {
     $("status").className = `status ${r?.ok ? "ok" : "off"}`;
     $("status").querySelector("span").textContent = r?.ok ? "已连接" : "未连接";
     $("missing").hidden = !!r?.ok;
+    if (!r?.ok) {
+      const e = String(r?.error || "");
+      // The browser's own words, in plain terms.
+      $("why").textContent = /not found|forbidden|not allowed/i.test(e)
+        ? "浏览器找不到 SwiftDL 的辅助程序。请用安装包（不是单独的 .exe 文件）安装 SwiftDL，打开一次后重新加载本扩展。"
+        : e ? `浏览器提示：${e}` : "请先打开一次 SwiftDL。若已在运行，请重启浏览器。";
+    }
     $("main").hidden = !r?.ok;
     $("open").hidden = !r?.ok;
   });

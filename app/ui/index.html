@@ -118,6 +118,24 @@
       </div>
     </form>
   </dialog>
+  <dialog id="dlg-playlist" class="modal composer grab">
+    <form method="dialog" id="form-playlist">
+      <div class="comp-top">
+        <span class="crumb"><img src="logo.svg" alt="" width="14" height="14">SwiftDL</span><i data-icon="chevron" class="crumb-sep"></i><span class="crumb-cur">播放列表</span>
+        <span class="grow"></span>
+        <button type="button" class="sq-btn" id="pl-x" title="关闭（Esc）"><i data-icon="x"></i></button>
+      </div>
+      <div class="comp-url" id="pl-title" style="font-size:16px"></div>
+      <div class="comp-state" id="pl-state"></div>
+      <div class="chips" id="pl-chips"><button type="button" class="chip" data-m="high"><span>视频，最高 1080p</span></button><button type="button" class="chip" data-m="best"><span>视频，最佳画质</span></button><button type="button" class="chip" data-m="audio"><span>仅音频</span></button></div>
+      <div class="grab-list" id="pl-list"></div>
+      <div class="comp-foot">
+        <button type="button" class="ghost-btn" id="pl-all">全不选</button>
+        <span class="grow"></span>
+        <button type="button" class="btn primary" id="pl-go" disabled>下载</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="dlg-settings" class="modal settings">
     <form method="dialog" id="form-settings">
       <nav class="set-nav" id="set-nav">
@@ -142,6 +160,8 @@
           </div>
           <div class="set-group">
             <label class="set-row"><div class="sr-text"><b>接管浏览器下载前先确认</b><span>浏览器发起下载时先显示“新建下载”窗口</span></div><span class="switch"><input type="checkbox" id="set-ask"><i></i></span></label>
+            <div class="set-row col"><div class="sr-text"><b>视频链接</b><span>下载视频时的处理方式。跳过窗口即可立即开始。</span></div>
+              <div class="seg" id="set-videodef"><button type="button" data-v="ask">每次询问</button><button type="button" data-v="high">最高 1080p</button><button type="button" data-v="best">最佳画质</button><button type="button" data-v="audio">仅音频</button></div></div>
             <label class="set-row"><div class="sr-text"><b>通知</b><span>下载完成后通知我</span></div><span class="switch"><input type="checkbox" id="set-notify"><i></i></span></label>
             <label class="set-row"><div class="sr-text"><b>监听剪贴板</b><span>复制下载链接后切换到 SwiftDL 时，提示是否下载</span></div><span class="switch"><input type="checkbox" id="set-clip"><i></i></span></label>
             <label class="set-row"><div class="sr-text"><b>自动解压压缩包</b><span>.zip、.tar.gz 或 .7z 下载完成后解压到同目录文件夹</span></div><span class="switch"><input type="checkbox" id="set-extract"><i></i></span></label>

@@ -12,6 +12,20 @@ ROOT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "ui")
 
 MAP = {
+# ---------- 0.4.2 / 0.4.3 new UI ----------
+# 只放完整独立字符串；带 ${...} 的模板串在源码里手工处理。
+"Playlist": "播放列表",
+"Close (Esc)": "关闭（Esc）",
+"Video, up to 1080p": "视频，最高 1080p",
+"Video, best available": "视频，最佳画质",
+"Audio only": "仅音频",
+"Select none": "全不选",
+"Select all": "全选",
+"Reading the playlist…": "正在读取播放列表…",
+"Couldn't read that playlist: ": "无法读取该播放列表：",
+"Open the app once. If it's already open, restart the browser.": "请先打开一次 SwiftDL。若已在运行，请重启浏览器。",
+"Mirrors": "镜像地址",
+"Video links": "视频链接",
 # ---------- index.html ----------
 "A folder picker opens": "会打开文件夹选择器",
 "About": "关于",
@@ -244,7 +258,7 @@ MAP = {
 
 # 逻辑键 / 分类值：绝不替换
 GUARD = {"Other", "Video", "Music", "Programs", "Compressed", "Documents", "Images",
-         "File", "All", "Enter", "Escape", "Del", "Space", "Ctrl", "ArrowUp", "ArrowDown",
+         "File", "All", "Enter", "Escape", "Del", "Delete", "Space", "Ctrl", "ArrowUp", "ArrowDown",
          "Backspace", "Cookie", "Referer", "User-Agent", "SwiftDL", "checked"}
 
 files = ["index.html", "download.html", "src/main.ts", "src/download.ts"]
@@ -289,20 +303,24 @@ for rel in files:
     t = re.sub(r"'([^'\\\n]{2,200})'", make_rep("'"), t)
 
     if t != orig:
-        open(p, "w", encoding="utf-8").write(t)
+        open(p, "w", encoding="utf-8", newline="\n").write(t)
     report[rel] = {"replaced": len(hits), "unique": len(set(hits))}
 
 print(json.dumps(report, ensure_ascii=False, indent=1))
 
 
 # ============ Rust 端（托盘菜单 / 通知 / 状态提示） ============
+# 逻辑比较键（label/枚举/按键名）：生成 MAP 时也不要收录
+LOGIC_KEYS = {"Delete", "Backspace", "Audio only", "New download", "Other"}
+
 RUST_MAP = {
 "Open SwiftDL":"打开 SwiftDL","Quit SwiftDL":"退出 SwiftDL","Ignore speed limit":"忽略限速",
 "Download complete":"下载完成","Unpacked":"已解压","Couldn't unpack":"解压失败",
 "Downloads finished":"下载全部结束","Going to sleep in a few seconds.":"几秒后将进入睡眠。",
 "Shutting down in 60 seconds. To cancel, run: shutdown /a":"60 秒后关机。要取消请运行：shutdown /a",
 "Checking the file":"正在检查文件","Getting yt-dlp":"正在获取 yt-dlp","Getting ffmpeg":"正在获取 ffmpeg",
-"Unpacking ffmpeg":"正在解压 ffmpeg","Getting video details":"正在获取视频信息",
+"Unpacking ffmpeg":"正在解压 ffmpeg",
+"Unpacking yt-dlp":"正在解压 yt-dlp","couldn't download yt-dlp":"无法下载 yt-dlp","couldn't unpack yt-dlp":"无法解压 yt-dlp","Getting video details":"正在获取视频信息",
 "Joining video and audio":"正在合并视频与音频","Merging video and audio":"正在合并视频与音频",
 "Joining video and audio needs ffmpeg.":"合并视频与音频需要 ffmpeg。","Finishing":"正在收尾","Starting":"正在开始",
 "Best quality":"最佳画质","Audio only":"仅音频","Finding peers":"正在寻找节点","Looking for peers":"正在寻找节点",
@@ -318,7 +336,8 @@ EXT_MAP = {
 "Skip files under":"跳过小于","Off":"关闭","Connected":"已连接","Not connected":"未连接","Checking":"检查中",
 "Can't reach SwiftDL":"无法连接 SwiftDL",
 "Open the app once. If it's already open, restart the browser.":"请先打开一次 SwiftDL。若已在运行，请重启浏览器。",
-"Download SwiftDL":"下载 SwiftDL","On ":"在 ","Hold ":"按住 ",
+"Download SwiftDL":"下载 SwiftDL",
+"This browser can't find SwiftDL's helper. Install SwiftDL with its installer (not just the .exe file), open it once, then reload this extension.":"浏览器找不到 SwiftDL 的辅助程序。请用安装包（不是单独的 .exe 文件）安装 SwiftDL，打开一次后重新加载本扩展。","On ":"在 ","Hold ":"按住 ",
 "while clicking to download in the browser":"再点击，即可改用浏览器下载",
 }
 
@@ -335,7 +354,7 @@ def sub_file(p, mp, allow_text):
             if '="' + k + '"' in t:
                 n += t.count('="' + k + '"'); t = t.replace('="' + k + '"', '="' + v + '"')
     if t != o:
-        open(p, "w", encoding="utf-8").write(t)
+        open(p, "w", encoding="utf-8", newline="\n").write(t)
     return n
 
 ui = os.path.abspath(ROOT)

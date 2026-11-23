@@ -33,14 +33,26 @@ pub fn is_newer(remote: &str, local: &str) -> bool {
 
 /// This platform's installer among the release's assets.
 fn pick_asset(names: &[(String, String)]) -> Option<String> {
-    let suffix = if cfg!(windows) {
-        "-setup.exe"
-    } else if cfg!(target_os = "macos") {
-        ".dmg"
-    } else {
-        return None; // Linux: .deb, .rpm or AppImage; let the user choose on the page.
-    };
-    names.iter().find(|(name, _)| name.ends_with(suffix)).map(|(_, url)| url.clone())
+    if cfg!(windows) {
+        return pick_windows(names, cfg!(target_arch = "aarch64"));
+    }
+    if cfg!(target_os = "macos") {
+        return names.iter().find(|(name, _)| name.ends_with(".dmg")).map(|(_, url)| url.clone());
+    }
+    None // Linux: .deb, .rpm or AppImage; let the user choose on the page.
+}
+
+/// The Windows installer for this CPU. An ARM64 PC takes the ARM64 one; every
+/// other PC takes the x64 one and never the ARM64 one (Windows refuses to run it).
+fn pick_windows(names: &[(String, String)], arm: bool) -> Option<String> {
+    let installers = names.iter().filter(|(n, _)| n.ends_with("-setup.exe") || n.ends_with("_installer.exe"));
+    let for_arm = |n: &str| n.contains("arm64");
+    let mut found = installers.clone().find(|(n, _)| for_arm(n) == arm);
+    // An ARM64 PC with no ARM64 installer in the release runs the x64 one.
+    if found.is_none() && arm {
+        found = installers.clone().next();
+    }
+    found.map(|(_, url)| url.clone())
 }
 
 /// The latest release, if it is newer than this build.
@@ -94,7 +106,24 @@ pub async fn run_installer(_client: &Client, _url: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_newer;
+    use super::{is_newer, pick_windows};
+
+    #[test]
+    fn each_pc_gets_its_own_windows_installer() {
+        let names = |list: &[&str]| list.iter().map(|n| (n.to_string(), format!("https://x/{n}"))).collect::<Vec<_>>();
+        // Alphabetical, as GitHub lists them: arm64 comes before x64.
+        let both = names(&["SwiftDL_1_arm64-setup.exe", "SwiftDL_1_arm64_en-US.msi", "SwiftDL_1_x64-setup.exe", "SwiftDL_1_x64_en-US.msi"]);
+        assert_eq!(pick_windows(&both, false).as_deref(), Some("https://x/SwiftDL_1_x64-setup.exe"), "x64 must never get the ARM64 file");
+        assert_eq!(pick_windows(&both, true).as_deref(), Some("https://x/SwiftDL_1_arm64-setup.exe"));
+        // The ARM64 installer renamed away from "-setup.exe" so old updaters skip it.
+        let renamed = names(&["SwiftDL_1_arm64_installer.exe", "SwiftDL_1_x64-setup.exe"]);
+        assert_eq!(pick_windows(&renamed, false).as_deref(), Some("https://x/SwiftDL_1_x64-setup.exe"));
+        assert_eq!(pick_windows(&renamed, true).as_deref(), Some("https://x/SwiftDL_1_arm64_installer.exe"));
+        // Only an x64 installer: an ARM64 PC runs it under emulation; nothing at all: None.
+        let only_x64 = names(&["SwiftDL_1_x64-setup.exe"]);
+        assert_eq!(pick_windows(&only_x64, true).as_deref(), Some("https://x/SwiftDL_1_x64-setup.exe"));
+        assert_eq!(pick_windows(&names(&["SwiftDL_1_arm64_installer.exe"]), false), None);
+    }
 
     #[test]
     fn compares_versions() {

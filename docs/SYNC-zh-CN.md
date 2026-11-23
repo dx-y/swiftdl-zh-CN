@@ -2,6 +2,9 @@
 
 本仓库是 [harshsinghsv/swiftdl](https://github.com/harshsinghsv/swiftdl) 的简体中文汉化 fork。
 
+> 当前基线：上游 **v0.4.3**（`app/src-tauri/tauri.conf.json` 的 `version`），中文 tag `v0.4.3-zh.1`。
+> 上一次基线是 v0.4.1（`v0.4.1-zh.1`），0.4.1→0.4.3 的合并冲突集中在 UI 文案、`tauri.conf.json`、Rust 提示串与扩展 `content.js`，共 8 个文件 11 处冲突。
+
 分支模型：
 
 | 分支 | 用途 |
@@ -79,7 +82,14 @@ gh release create vX.Y.Z-zh.1 \
    同时是下载目录下的子文件夹名和程序内部的分类判定依据，翻译会让路径改名、分类失效。
 2. **扩展里用于字符串比较的值必须与显示文案同步改。** 例如音轨项的标签参与
    `q.label === "Audio only"` 这类比较，显示改成「仅音频」后比较值也要一起改，否则逻辑失效。
-3. **应用标识保持 `com.swiftdl.app.cn`。** 这样中文版与原版的数据目录、单实例锁互不干扰，
+3. **按键名、分类枚举、协议值不进映射表。** `Delete`、`Backspace`、`Enter`、`Video`、`Other` 这类
+   既出现在按键判断里、又可能出现在按钮文案里的词，翻译后会让 `k === "Delete"` 之类的逻辑失效
+   （0.4.3 同步时踩过一次，已把 `Delete` 等加进 `tools/apply-zh.py` 的 `GUARD`）。
+4. **带 `${...}` 的模板串不要放进 MAP。** 例如 `Remove ${n} downloads?`、`Select all/none` 由
+   `main.ts` 动态拼装，脚本的正则只认完整独立字符串，这类句子在源码里直接改中文，无需登记。
+5. **`tools/apply-zh.py` 写文件必须带 `newline="\n"`。** 否则 Windows 上会把整个文件换成 CRLF，
+   git diff 变成全文重写，合并时极易冲突。
+6. **应用标识保持 `com.swiftdl.app.cn`。** 这样中文版与原版的数据目录、单实例锁互不干扰，
    两个版本可以同时运行；若改回上游的 `com.swiftdl.app`，会与官方版抢同一把锁。
 
 ## 五、Windows 本地环境备忘
@@ -97,3 +107,20 @@ gh release create vX.Y.Z-zh.1 \
 2. 若上游已引入 i18n 语言文件，直接新增 `zh-CN` 语言包，比改源码更省事，也更利于跟随上游；
 3. 若仍是硬编码文案，重新导出英文候选清单，重建 `tools/apply-zh.py` 的 MAP；
 4. 构建 + 过第三节复验清单。
+
+## 七、自动跟随上游（`upstream-watch.yml`）
+
+`.github/workflows/upstream-watch.yml` 每天 09:00（北京时间）检查上游发布：
+
+| 判定 | 动作 |
+| --- | --- |
+| 上游最新 release 是 prerelease / draft | 跳过 |
+| 上游版本号不高于当前 `tauri.conf.json` 的 version | 跳过 |
+| 已存在 `vX.Y.Z-zh.1` tag | 跳过 |
+| 上游本版已内置简体中文（`app/ui/src/i18n/zh*.json` 等） | 停手，不再自动构建 |
+| 以上都不命中 | 取上游源码 → 重放 `tools/apply-zh.py` → 提交 zh-CN → 打 tag → 触发 `release.yml` 构建 → 开 issue 提醒补译 |
+
+自动构建的产物仍然是 **draft Release**，需要人工审阅后手动发布，不会直接对用户可见。
+重放只能翻译 MAP 里登记过的句子，**上游新增界面通常会有英文残留**，收到 issue 后按第二节补译并补进 MAP。
+
+需要立刻手动跑一次：Actions → Upstream watch → Run workflow（`release` 关掉时只同步不打 tag）。

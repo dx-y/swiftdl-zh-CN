@@ -69,6 +69,8 @@ export interface Settings {
   debridToken: string;
   /** Interface size in percent (90-150). */
   uiScale: number;
+  /** "ask", "high" (best up to 1080p), "best" or "audio". */
+  videoDefault: string;
   /** A local aria2-compatible API; applies after a restart. */
   apiEnabled: boolean;
   apiPort: number;
@@ -94,12 +96,14 @@ export interface ProbeInfo { filename: string; size: number | null; resumable: b
 export interface BrowserStatus { id: string; name: string; installed: boolean; autoOffer: boolean; lastSeen?: number | null }
 export interface IntegrationStatus { browsers: BrowserStatus[]; lastSeen: number | null; storeUrl: string; storeAvailable: boolean }
 export interface Quality { label: string; format: string; ext: string; size: number | null }
+export interface PlaylistInfo { title: string; entries: { url: string; title: string; duration: number | null }[] }
 export interface MediaInfo { title: string; site: string; duration: number | null; qualities: Quality[] }
 export interface TorrentInfo { name: string; size: number; files: { path: string; size: number }[] }
 export interface AddRequest {
   url: string; filename: string; dir: string; headers?: Header[]; start: boolean;
   window?: string | null; format?: string | null; size?: number | null; torrentFiles?: number[] | null;
   checksum?: string | null;
+  mirrors?: string[];
 }
 
 type Ids = { ids: number[] };
@@ -110,6 +114,9 @@ export interface Commands {
   probe_media: [{ url: string; headers: Header[] }, MediaInfo];
   probe_note: [void, string | null];
   add_links: [{ text: string }, number];
+  is_playlist_url: [{ url: string }, boolean];
+  probe_playlist: [{ url: string }, PlaylistInfo];
+  add_playlist: [{ entries: { url: string; title: string }[]; mode: string }, number];
   set_url: [{ id: number; url: string }, void];
   download_next: [{ id: number }, boolean];
   add_metalink: [{ url: string }, [string, number]];

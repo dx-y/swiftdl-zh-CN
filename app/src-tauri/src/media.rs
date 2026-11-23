@@ -41,7 +41,85 @@ pub fn is_media_url(url: &str) -> bool {
     SITES.iter().any(|s| host == *s || host.ends_with(&format!(".{s}")))
 }
 
-/// Live status text for a media download ("正在合并视频与音频").
+/// Spotify 的音乐有版权保护，任何下载器都无法保存。
+pub const SPOTIFY_MSG: &str = "Spotify 的音乐有版权保护，SwiftDL 无法下载。";
+
+pub fn is_spotify(url: &str) -> bool {
+    url::Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase())).is_some_and(|h| h == "spotify.com" || h.ends_with(".spotify.com"))
+}
+
+/// YouTube 播放列表页（/playlist?list=...）。只带 `list=` 的观看链接
+/// 属于列表中的单个视频，仍按单个视频处理。
+pub fn is_playlist_url(url: &str) -> bool {
+    let Ok(u) = url::Url::parse(url) else { return false };
+    let host = u.host_str().unwrap_or("").to_ascii_lowercase();
+    let youtube = host == "youtube.com" || host.ends_with(".youtube.com");
+    youtube && u.path() == "/playlist" && u.query_pairs().any(|(k, v)| k == "list" && !v.is_empty())
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistEntry {
+    pub url: String,
+    pub title: String,
+    pub duration: Option<f64>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Playlist {
+    pub title: String,
+    pub entries: Vec<PlaylistEntry>,
+}
+
+/// yt-dlp 返回的扁平播放列表结果，剔除已失效的视频。
+fn parse_playlist(v: &Value) -> Result<Playlist> {
+    let entries: Vec<PlaylistEntry> = v["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            let title = e["title"].as_str()?.trim().to_string();
+            if title.is_empty() || title == "[Private video]" || title == "[Deleted video]" {
+                return None;
+            }
+            let url = match (e["url"].as_str(), e["id"].as_str()) {
+                (Some(u), _) if u.starts_with("http") => u.to_string(),
+                (_, Some(id)) => format!("https://www.youtube.com/watch?v={id}"),
+                _ => return None,
+            };
+            Some(PlaylistEntry { url, title, duration: e["duration"].as_f64() })
+        })
+        .take(500)
+        .collect();
+    if entries.is_empty() {
+        bail!("该播放列表中没有 SwiftDL 可下载的视频");
+    }
+    Ok(Playlist { title: v["title"].as_str().unwrap_or("播放列表").to_string(), entries })
+}
+
+/// 播放列表中的视频，供用户挑选。
+pub async fn playlist(client: &Client, url: &str, headers: Vec<(String, String)>) -> Result<Playlist> {
+    if is_spotify(url) {
+        bail!("{SPOTIFY_MSG}");
+    }
+    let tools = ensure_tools(client, &PROBE_NOTE, false).await?;
+    *PROBE_NOTE.lock().unwrap() = None;
+    let json = ytdlp_run(tools.ytdlp, url.to_string(), headers, false, &["--flat-playlist", "--yes-playlist"]).await?;
+    parse_playlist(&serde_json::from_slice(&json).context("yt-dlp 返回了无法识别的内容")?)
+}
+
+/// 播放列表选项对应的格式、扩展名与分类。
+/// 音频取最佳 AAC；视频最高 1080p 或最佳画质。
+pub fn playlist_format(mode: &str) -> (&'static str, &'static str, &'static str) {
+    match mode {
+        "audio" => ("ba[ext=m4a]/ba", "m4a", "Music"),
+        "best" => ("bv*+ba/b", "mp4", "Video"),
+        _ => ("bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b", "mp4", "Video"),
+    }
+}
+
+/// 媒体下载的实时状态文案（"正在合并视频与音频"）。
 pub type Note = Arc<Mutex<Option<String>>>;
 
 fn set_note(note: &Note, text: impl Into<String>) {
@@ -55,6 +133,10 @@ fn tools_dir() -> PathBuf {
 }
 
 fn ytdlp_path() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        // The unpacked build: see `install_macos_ytdlp`.
+        return tools_dir().join("yt-dlp-macos").join("yt-dlp_macos");
+    }
     tools_dir().join(if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" })
 }
 
@@ -91,12 +173,96 @@ struct Tools {
     ffmpeg: Option<PathBuf>,
 }
 
+/// macOS marks files written by a program that was itself downloaded in a
+/// browser, and a program launched from the browser's extension inherits that.
+/// yt-dlp then unpacks its Python.framework into a quarantined folder and macOS
+/// reports it "damaged" (#21). Clearing the mark from our tools folder avoids it.
+#[cfg(target_os = "macos")]
+fn strip_quarantine() {
+    let _ = Command::new("xattr").args(["-dr", "com.apple.quarantine"]).arg(tools_dir()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+}
+#[cfg(not(target_os = "macos"))]
+fn strip_quarantine() {}
+
+/// On a Mac, yt-dlp comes as the build that is already unpacked (a program plus
+/// an `_internal` folder). The single-file build unpacks its Python.framework
+/// into a fresh temporary folder on every run, outside anything we can clean,
+/// and macOS refuses it as "damaged" (#21). Unpacked once here, the mark can
+/// be cleared from every file before yt-dlp ever runs.
+async fn install_macos_ytdlp(client: &Client, note: &Note) -> Result<()> {
+    let dir = tools_dir().join("yt-dlp-macos");
+    let fresh = tools_dir().join("yt-dlp-macos.new");
+    let zip = tools_dir().join("yt-dlp_macos.zip");
+    let url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip";
+    fetch(client, url, &zip, note, "正在获取 yt-dlp").await.context("无法下载 yt-dlp")?;
+    set_note(note, "正在解压 yt-dlp");
+    let _ = std::fs::remove_dir_all(&fresh);
+    let unpacked = unpack_zip(&zip, &fresh);
+    let _ = std::fs::remove_file(&zip);
+    unpacked.context("无法解压 yt-dlp")?;
+    let _ = std::fs::remove_file(tools_dir().join("yt-dlp")); // the old single-file build
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::rename(&fresh, &dir)?;
+    strip_quarantine();
+    stamp_update();
+    Ok(())
+}
+
+/// Unpacks a whole zip, keeping each file's permissions.
+fn unpack_zip(zip: &Path, dest: &Path) -> Result<()> {
+    std::fs::create_dir_all(dest)?;
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(zip)?)?;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)?;
+        let Some(rel) = entry.enclosed_name() else { continue };
+        let out = dest.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out)?;
+            continue;
+        }
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut file = std::fs::File::create(&out)?;
+        std::io::copy(&mut entry, &mut file)?;
+        #[cfg(unix)]
+        if let Some(mode) = entry.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(mode & 0o777))?;
+        }
+    }
+    Ok(())
+}
+
 /// Downloads yt-dlp (and ffmpeg on Windows) if they're missing.
 async fn ensure_tools(client: &Client, note: &Note, need_ffmpeg: bool) -> Result<Tools> {
     let _guard = TOOLS.lock().await;
     std::fs::create_dir_all(tools_dir())?;
     let ytdlp = ytdlp_path();
-    if !ytdlp.exists() {
+    if cfg!(target_os = "macos") {
+        if !ytdlp.exists() {
+            install_macos_ytdlp(client, note).await?;
+        } else {
+            strip_quarantine();
+            // The unpacked build can't update itself: fetch a fresh copy once a day.
+            let stale = std::fs::metadata(stamp_path())
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| SystemTime::now().duration_since(t).ok())
+                .is_none_or(|age| age >= Duration::from_secs(24 * 3600));
+            if stale {
+                stamp_update();
+                let (client, note) = (client.clone(), Note::default());
+                tokio::spawn(async move {
+                    // Runs only while nothing else is using the tools.
+                    let _guard = TOOLS.lock().await;
+                    if let Err(e) = install_macos_ytdlp(&client, &note).await {
+                        crate::log::line(&format!("couldn't refresh yt-dlp: {e:#}"));
+                    }
+                });
+            }
+        }
+    } else if !ytdlp.exists() {
         let url = format!("https://github.com/yt-dlp/yt-dlp/releases/latest/download/{}", ytdlp_asset());
         fetch(client, &url, &ytdlp, note, "正在获取 yt-dlp").await.context("无法下载 yt-dlp")?;
         #[cfg(unix)]
@@ -104,8 +270,10 @@ async fn ensure_tools(client: &Client, note: &Note, need_ffmpeg: bool) -> Result
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&ytdlp, std::fs::Permissions::from_mode(0o755))?;
         }
+        strip_quarantine();
         stamp_update();
     } else {
+        strip_quarantine();
         update_in_background(&ytdlp);
     }
     if need_ffmpeg && ffmpeg_dir().is_none() && cfg!(windows) {
@@ -333,6 +501,9 @@ const PROBE_LIMIT: Duration = Duration::from_secs(90);
 /// Only if that comes back short (an error, or nothing above 480p) does it
 /// ask again with the runtime. The download itself always gets the runtime.
 pub async fn probe(client: &Client, url: &str, headers: Vec<(String, String)>) -> Result<MediaInfo> {
+    if is_spotify(url) {
+        bail!("{SPOTIFY_MSG}");
+    }
     let tools = ensure_tools(client, &PROBE_NOTE, false).await?;
     *PROBE_NOTE.lock().unwrap() = None;
     let quick = read_info(tools.ytdlp.clone(), url.to_string(), headers.clone(), false).await;
@@ -354,10 +525,15 @@ pub async fn probe(client: &Client, url: &str, headers: Vec<(String, String)>) -
 
 /// Runs `yt-dlp -J` and returns its JSON, giving up after PROBE_LIMIT.
 async fn ytdlp_json(ytdlp: PathBuf, url: String, headers: Vec<(String, String)>, with_js: bool) -> Result<Vec<u8>> {
+    ytdlp_run(ytdlp, url, headers, with_js, &["--no-playlist"]).await
+}
+
+/// `yt-dlp -J` with `mode` options (one video, or a flat list of a playlist's videos).
+async fn ytdlp_run(ytdlp: PathBuf, url: String, headers: Vec<(String, String)>, with_js: bool, mode: &'static [&'static str]) -> Result<Vec<u8>> {
     let url_for_log = url.clone();
     let out = tauri::async_runtime::spawn_blocking(move || -> Result<std::process::Output> {
         let mut cmd = if with_js { ytdlp_command(&ytdlp) } else { command(&ytdlp) };
-        cmd.args(["-J", "--no-playlist", "--no-warnings", "--socket-timeout", "20"]);
+        cmd.arg("-J").args(mode).args(["--no-warnings", "--socket-timeout", "20"]);
         add_headers(&mut cmd, &headers_for(&url, &headers, with_js));
         // Plain anonymous pipes, as the common Windows launchers make. Rust's own
         // `Stdio::piped()` is a named pipe, and on some PCs yt-dlp's Python can't
@@ -505,24 +681,39 @@ fn qualities(info: &Value) -> Vec<Quality> {
     let mut heights: Vec<u64> = videos.iter().filter_map(|f| f["height"].as_u64()).collect();
     heights.sort_unstable_by(|a, b| b.cmp(a));
     heights.dedup();
+    // HDR is its own choice: on a video with HDR10 or HLG, a plain "2160p" used
+    // to pick the HDR stream, which looks washed out on an ordinary screen.
+    let is_hdr = |f: &Value| f["dynamic_range"].as_str().is_some_and(|d| d != "SDR");
     let mut list: Vec<Quality> = heights
         .into_iter()
-        .map(|h| {
+        .flat_map(|h| {
             let at: Vec<&&Value> = videos.iter().filter(|f| f["height"].as_u64() == Some(h)).collect();
-            let best = at.iter().copied().max_by(|a, b| tbr(a).total_cmp(&tbr(b))).copied();
-            let fps = at.iter().filter_map(|f| f["fps"].as_f64()).fold(0.0, f64::max);
-            let progressive = best.is_some_and(|f| has(f, "acodec"));
-            let size = best.and_then(size_of).map(|v| if progressive { v } else { v + audio_size.unwrap_or(0) });
-            Quality {
-                label: if fps > 30.5 { format!("{h}p{}", fps.round()) } else { format!("{h}p") },
-                // H.264 + AAC first: it plays everywhere. AV1/VP9 only
-                // where YouTube has nothing else (1440p and 4K).
-                format: format!(
-                    "bv*[height={h}][vcodec^=avc1]+ba[ext=m4a]/bv*[height={h}]+ba[ext=m4a]/bv*[height={h}]+ba/b[height={h}]/bv*[height<={h}]+ba/b"
-                ),
-                ext: "mp4".into(),
-                size,
+            let hdr: Vec<&&Value> = at.iter().copied().filter(|f| is_hdr(f)).collect();
+            let sdr: Vec<&&Value> = at.iter().copied().filter(|f| !is_hdr(f)).collect();
+            let entry = |set: &Vec<&&Value>, hdr_label: bool, format: String| -> Quality {
+                let best = set.iter().copied().max_by(|a, b| tbr(a).total_cmp(&tbr(b))).copied();
+                let fps = set.iter().filter_map(|f| f["fps"].as_f64()).fold(0.0, f64::max);
+                let progressive = best.is_some_and(|f| has(f, "acodec"));
+                let size = best.and_then(size_of).map(|v| if progressive { v } else { v + audio_size.unwrap_or(0) });
+                let base = if fps > 30.5 { format!("{h}p{}", fps.round()) } else { format!("{h}p") };
+                Quality { label: if hdr_label { format!("{base} HDR") } else { base }, format, ext: "mp4".into(), size }
+            };
+            // H.264 + AAC first: it plays everywhere. AV1/VP9 only where YouTube has
+            // nothing else (1440p and 4K). Where HDR exists, the plain choice stays SDR.
+            let plain = if hdr.is_empty() {
+                format!("bv*[height={h}][vcodec^=avc1]+ba[ext=m4a]/bv*[height={h}]+ba[ext=m4a]/bv*[height={h}]+ba/b[height={h}]/bv*[height<={h}]+ba/b")
+            } else {
+                format!("bv*[height={h}][vcodec^=avc1]+ba[ext=m4a]/bv*[height={h}][dynamic_range=?SDR]+ba[ext=m4a]/bv*[height={h}][dynamic_range=?SDR]+ba/b[height={h}]/bv*[height<={h}][dynamic_range=?SDR]+ba/b")
+            };
+            let hdr_format = format!("bv*[height={h}][dynamic_range~=\"HDR|HLG|DV\"]+ba[ext=m4a]/bv*[height={h}][dynamic_range~=\"HDR|HLG|DV\"]+ba");
+            let mut out = vec![];
+            if !hdr.is_empty() {
+                out.push(entry(&hdr, true, hdr_format));
             }
+            if !sdr.is_empty() || hdr.is_empty() {
+                out.push(entry(if sdr.is_empty() { &at } else { &sdr }, false, plain));
+            }
+            out
         })
         .collect();
     if let Some(a) = best_audio {
@@ -904,6 +1095,49 @@ mod tests {
     }
 
     #[test]
+    fn hdr_is_its_own_choice() {
+        let info = serde_json::json!({ "formats": [
+            { "format_id": "313", "height": 2160, "vcodec": "vp9", "acodec": "none", "dynamic_range": "SDR", "tbr": 9000.0, "filesize": 400, "fps": 24.0 },
+            { "format_id": "701", "height": 2160, "vcodec": "av01.0.12M.10", "acodec": "none", "dynamic_range": "HDR10", "tbr": 12000.0, "filesize": 600, "fps": 24.0 },
+            { "format_id": "137", "height": 1080, "vcodec": "avc1.640028", "acodec": "none", "dynamic_range": "SDR", "tbr": 4000.0, "filesize": 100, "fps": 24.0 },
+            { "format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "tbr": 128.0, "filesize": 10 },
+        ]});
+        let q = super::qualities(&info);
+        let labels: Vec<&str> = q.iter().map(|q| q.label.as_str()).collect();
+        assert_eq!(labels, ["2160p HDR", "2160p", "1080p", "仅音频"]);
+        assert!(q[0].format.contains("dynamic_range~="), "the HDR choice asks for HDR streams");
+        assert!(q[1].format.contains("dynamic_range=?SDR"), "the plain 2160p must not fall back to HDR");
+        assert!(!q[2].format.contains("dynamic_range"), "a height with no HDR keeps the old selector");
+        assert_eq!((q[0].size, q[1].size), (Some(610), Some(410)));
+    }
+
+    #[test]
+    fn playlists_are_spotted_and_read() {
+        assert!(is_playlist_url("https://www.youtube.com/playlist?list=PLabc123"));
+        assert!(is_playlist_url("https://music.youtube.com/playlist?list=OLAK5uy"));
+        assert!(!is_playlist_url("https://www.youtube.com/watch?v=abc&list=PLabc123"), "one video from a playlist stays one video");
+        assert!(!is_playlist_url("https://www.youtube.com/playlist") && !is_playlist_url("https://vimeo.com/playlist?list=1"));
+        let v = serde_json::json!({ "title": "Mix", "entries": [
+            { "id": "aaa", "url": "https://www.youtube.com/watch?v=aaa", "title": "First", "duration": 235 },
+            { "id": "bbb", "title": "No address given", "duration": null },
+            { "id": "ccc", "title": "[Private video]" },
+            { "id": "ddd", "title": "[Deleted video]" },
+            { "url": "https://www.youtube.com/watch?v=eee", "title": "  Fifth  " },
+        ]});
+        let p = parse_playlist(&v).unwrap();
+        assert_eq!(p.title, "Mix");
+        assert_eq!(p.entries, vec![
+            PlaylistEntry { url: "https://www.youtube.com/watch?v=aaa".into(), title: "First".into(), duration: Some(235.0) },
+            PlaylistEntry { url: "https://www.youtube.com/watch?v=bbb".into(), title: "No address given".into(), duration: None },
+            PlaylistEntry { url: "https://www.youtube.com/watch?v=eee".into(), title: "Fifth".into(), duration: None },
+        ]);
+        assert!(parse_playlist(&serde_json::json!({ "entries": [] })).is_err());
+        assert_eq!(playlist_format("audio").1, "m4a");
+        assert!(playlist_format("high").0.contains("height<=1080") && !playlist_format("best").0.contains("height"));
+        assert!(is_spotify("https://open.spotify.com/playlist/37i9") && !is_spotify("https://notspotify.com/x"));
+    }
+
+    #[test]
     fn finds_youtube_ids() {
         assert_eq!(super::youtube_id("https://www.youtube.com/watch?v=M5OCLifZK1w&list=RD").as_deref(), Some("M5OCLifZK1w"));
         assert_eq!(super::youtube_id("https://youtu.be/M5OCLifZK1w").as_deref(), Some("M5OCLifZK1w"));
@@ -968,6 +1202,17 @@ mod live {
     /// `cargo test --release live_youtube -- --ignored --nocapture` with
     /// SWIFTDL_YT_URL and SWIFTDL_YT_OUT set. Downloads 1080p for real.
     /// Runs the same lookup the app does, for any URL in SWIFTDL_PROBE_URL.
+    /// SWIFTDL_PL_URL=https://www.youtube.com/playlist?list=... cargo test live_playlist -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn live_playlist() {
+        let url = std::env::var("SWIFTDL_PL_URL").unwrap();
+        let client = swiftdl_engine::build_client().unwrap();
+        let t = std::time::Instant::now();
+        let p = tauri::async_runtime::block_on(super::playlist(&client, &url, vec![])).unwrap();
+        println!("PLAYLIST {:?}: {} videos in {:.1}s; first: {:?}", p.title, p.entries.len(), t.elapsed().as_secs_f64(), p.entries.first());
+    }
+
     #[test]
     #[ignore]
     fn live_probe() {

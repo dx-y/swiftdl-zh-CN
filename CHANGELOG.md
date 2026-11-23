@@ -6,6 +6,61 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.3-zh.1] - 2026-11-23
+
+本版为简体中文汉化版，基于上游 v0.4.3（MIT，非官方 fork，未改动任何下载逻辑）。
+
+- 汉化：上游 0.4.2 / 0.4.3 新增界面全部中文化 —— YouTube 播放列表选择窗口（画质选项、全选/全不选、读取状态）、多选批量操作与批量删除确认框、新建下载窗口的「镜像地址」字段、设置 > 常规 > 视频链接、HDR 作为独立画质项、扩展「找不到辅助程序」提示
+- 修正：「仅音频」标签在扩展与 Rust 端的跨语言比较值同步，音频下载仍能正确归入音乐分类
+- 修正：`tools/apply-zh.py` 写入文件时强制 LF，避免 Windows 下整文件换行符 diff；按键名与分类枚举加入保护名单，防止 `Delete` 之类的逻辑键被误译
+
+
+## [0.4.3] - 2026-11-23
+
+### Added
+- **Mirrors field** in the New download window: paste other links to the same
+  file and the parts are shared between all of them (#23).
+
+### Fixed
+- **The browser's own download box showed next to SwiftDL's window.** The
+  extension now drops the browser's download at once; if SwiftDL can't be
+  reached, the browser downloads the file itself.
+- **"8 connections" while the server let only one through.** Connections are
+  counted only while data is arriving, and the New download window says "up
+  to 8".
+- **Linux: the New download window opened behind other windows** (#24). It now
+  stays on top and asks the desktop to point at it.
+- **macOS: "Python.framework is damaged"** (#21). yt-dlp now runs from an
+  unpacked copy whose quarantine mark is cleared. Untested on a Mac.
+
+## [0.4.2] - 2026-11-18
+
+### Added
+- **Select several downloads** (Ctrl/Cmd+click, Shift+click, Ctrl+A) and remove,
+  pause or resume them together (#12).
+- **Skip the video window.** Settings > General > Video links: start straight
+  away at up to 1080p, the best available, or audio only (#17).
+- **YouTube playlists.** Paste a playlist link to choose which videos to take,
+  as video (up to 1080p or the best available) or as audio only (#17).
+  Spotify links say plainly that its music is copy-protected.
+- **HDR as its own quality choice** ("2160p HDR" next to "2160p") (#15). A plain
+  "2160p" used to pick the HDR stream on videos that have one.
+
+### Fixed
+- **In-app update on Windows x64 installed the ARM64 installer**, which Windows
+  refuses to run ("This app can't run on your PC"). The updater now picks the
+  installer for the PC's own CPU, and the ARM64 installer is named
+  `..._arm64_installer.exe` so older versions can't pick it by mistake.
+- The New download window was cut off at the bottom since 0.4.0 added the
+  SHA-256 row (#14). It starts taller and resizes more reliably.
+- Firefox-based browsers (Zen, LibreWolf, Waterfox, Floorp, Mullvad) are
+  recognised as Firefox, so SwiftDL shows them as connected (#18).
+- macOS: yt-dlp's Python.framework was reported "damaged" on YouTube pages
+  (#21). SwiftDL now clears macOS's quarantine mark from its tools folder.
+  Not tested on a Mac.
+- The extension popup says why it can't reach SwiftDL, for example when only
+  the .exe was copied and not installed (#16).
+
 ## [0.4.1] - 2026-11-14
 
 ### Changed
@@ -298,7 +353,8 @@ uses [Semantic Versioning](https://semver.org/).
 - GitHub Actions for CI and tagged releases (Windows, macOS, Linux and the
   extension zip).
 
-[Unreleased]: https://github.com/harshsinghsv/swiftdl/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/harshsinghsv/swiftdl/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/harshsinghsv/swiftdl/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/harshsinghsv/swiftdl/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/harshsinghsv/swiftdl/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/harshsinghsv/swiftdl/compare/v0.3.3...v0.3.5

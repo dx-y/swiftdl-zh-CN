@@ -99,17 +99,20 @@ chrome.downloads.onCreated.addListener(async (item) => {
   if (await siteDisabled(item.referrer || url)) return;
   if (settings.minSizeKB > 0 && item.totalBytes > 0 && item.totalBytes < settings.minSizeKB * 1024) return;
 
-  // Pause first so the browser doesn't keep downloading while we ask the app.
-  await chrome.downloads.pause(item.id).catch(() => {});
+  // Drop the browser's own download at once: while it lingers, the browser
+  // shows its save box or download bubble next to SwiftDL's window. If the app
+  // can't be reached, the browser is asked to download the file again.
+  const { referrer, filename } = item;
+  await chrome.downloads.cancel(item.id).catch(() => {});
+  await chrome.downloads.erase({ id: item.id }).catch(() => {});
   try {
-    await sendToApp({ url, referrer: item.referrer, filename: item.filename });
-    await chrome.downloads.cancel(item.id).catch(() => {});
-    await chrome.downloads.erase({ id: item.id }).catch(() => {});
+    await sendToApp({ url, referrer, filename });
     await log(`#${item.id} handed to SwiftDL`);
     flashBadge("✓", "#2f9e6a");
   } catch (err) {
     await log(`#${item.id} left to the browser: ${err?.message || err}`);
-    await chrome.downloads.resume(item.id).catch(() => {});
+    browserOnce.set(url.split("#")[0], Date.now() + 60000);
+    await chrome.downloads.download({ url }).catch(() => {});
     flashBadge("!", "#dc4b4b");
   }
 });

@@ -480,7 +480,78 @@ impl DownloadManager {
     }
 
     /// Opens a "New download" window for `inc`.
-    pub fn new_download_window(&self, inc: Incoming) {
+    /// The videos picked from a playlist, each as its own download in the chosen
+    /// shape ("high", "best" or "audio"). Returns how many were added.
+    pub fn add_playlist(self: &Arc<Self>, entries: &[(String, String)], mode: &str) -> usize {
+        let (format, ext, category) = crate::media::playlist_format(mode);
+        for (url, title) in entries {
+            self.add(AddRequest {
+                url: url.clone(),
+                filename: format!("{}.{ext}", clean_name(title)),
+                dir: self.default_dir(category),
+                headers: vec![],
+                start: true,
+                window: None,
+                format: Some(format.to_string()),
+                size: None,
+                torrent_files: None,
+                checksum: None,
+                mirrors: vec![],
+            });
+        }
+        entries.len()
+    }
+
+    /// A video link: opens the New download window to choose a quality, unless
+    /// Settings says to start straight away with a default.
+    pub fn new_download_window(self: &Arc<Self>, inc: Incoming) {
+        let mode = self.settings().video_default;
+        if mode != "ask" && crate::media::is_media_url(&inc.url) && !crate::torrent::is_torrent(&inc.url, inc.filename.as_deref()) {
+            self.add_video_quietly(inc, mode);
+            return;
+        }
+        self.open_confirm_window(inc);
+    }
+
+    /// Looks up the video's qualities (the extension may have sent them), picks
+    /// one by the default, and starts. If anything goes wrong, the window opens
+    /// so the person can see why and choose.
+    fn add_video_quietly(self: &Arc<Self>, inc: Incoming, mode: String) {
+        let this = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let found: Result<(String, Vec<crate::media::Quality>), String> = match inc.qualities.clone().filter(|q| !q.is_empty()) {
+                Some(q) => Ok((inc.filename.clone().unwrap_or_default(), q)),
+                None => crate::media::probe(&this.client, &inc.url, inc.headers()).await.map(|i| (i.title, i.qualities)).map_err(|e| format!("{e:#}")),
+            };
+            let picked = found.ok().and_then(|(title, qs)| {
+                // A quality chosen on the page beats the default.
+                let at = inc.pick.filter(|&n| n < qs.len()).or_else(|| pick_quality(&qs, &mode))?;
+                Some((title, qs[at].clone()))
+            });
+            let Some((title, q)) = picked else {
+                this.open_confirm_window(inc);
+                return;
+            };
+            let name = format!("{}.{}", clean_name(if title.trim().is_empty() { "video" } else { &title }), q.ext);
+            let category = if matches!(q.ext.as_str(), "m4a" | "mp3" | "opus" | "ogg" | "webm" | "aac" | "flac") && q.label == "仅音频" { "Music" } else { "Video" };
+            let dir = this.default_dir(category);
+            this.add(AddRequest {
+                url: inc.url.clone(),
+                filename: name,
+                dir,
+                headers: inc.headers(),
+                start: true,
+                window: None,
+                format: Some(q.format),
+                size: q.size,
+                torrent_files: None,
+                checksum: None,
+                mirrors: vec![],
+            });
+        });
+    }
+
+    fn open_confirm_window(&self, inc: Incoming) {
         let token = {
             let mut g = self.inner.lock().unwrap();
             let token = g.next_confirm;
@@ -1005,5 +1076,59 @@ mod checksum_tests {
         std::fs::write(&p, b"abc").unwrap();
         assert_eq!(super::sha256_file(&p).unwrap(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
         let _ = std::fs::remove_file(p);
+    }
+}
+
+/// The quality a default means: "audio" is sound only, "best" the first (highest)
+/// video, "high" the best up to 1080p that isn't HDR.
+fn pick_quality(qs: &[crate::media::Quality], mode: &str) -> Option<usize> {
+    let height = |q: &crate::media::Quality| q.label.split(|c: char| !c.is_ascii_digit()).next().and_then(|d| d.parse::<u32>().ok());
+    let video = |q: &crate::media::Quality| q.label != "仅音频";
+    match mode {
+        "audio" => qs.iter().position(|q| q.label == "仅音频"),
+        "best" => qs.iter().position(video),
+        _ => qs.iter().position(|q| video(q) && !q.label.contains("HDR") && height(q).is_some_and(|h| h <= 1080)).or_else(|| qs.iter().position(video)),
+    }
+}
+
+/// A file name from a video's title: no characters Windows refuses, no extension left over.
+pub fn clean_name(title: &str) -> String {
+    let t = title.trim();
+    let t = match t.rsplit_once('.') {
+        Some((stem, ext)) if (2..=4).contains(&ext.len()) && ext.chars().all(|c| c.is_ascii_alphanumeric()) && !stem.is_empty() => stem,
+        _ => t,
+    };
+    let cleaned: String = t.chars().map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { ' ' } else { c }).collect();
+    let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let cut: String = cleaned.chars().take(120).collect();
+    let cut = cut.trim().trim_end_matches('.').to_string();
+    if cut.is_empty() { "video".into() } else { cut }
+}
+
+#[cfg(test)]
+mod video_default_tests {
+    use super::*;
+    use crate::media::Quality;
+
+    fn q(label: &str, ext: &str) -> Quality {
+        Quality { label: label.into(), format: format!("f-{label}"), ext: ext.into(), size: None }
+    }
+
+    #[test]
+    fn picks_by_default() {
+        let qs = [q("2160p HDR", "mp4"), q("2160p", "mp4"), q("1080p60", "mp4"), q("1080p HDR", "mp4"), q("720p", "mp4"), q("仅音频", "m4a")];
+        assert_eq!(pick_quality(&qs, "high"), Some(2), "best up to 1080p, never HDR by default");
+        assert_eq!(pick_quality(&qs, "best"), Some(0));
+        assert_eq!(pick_quality(&qs, "audio"), Some(5));
+        assert_eq!(pick_quality(&[q("4320p", "mp4")], "high"), Some(0), "nothing at or under 1080p: take the first video");
+        assert_eq!(pick_quality(&[q("720p", "mp4")], "audio"), None);
+    }
+
+    #[test]
+    fn names_from_titles() {
+        assert_eq!(clean_name("Noor, Khan - Aarzu (Official Music Video).mp4"), "Noor, Khan - Aarzu (Official Music Video)");
+        assert_eq!(clean_name("a/b: c*d?"), "a b c d");
+        assert_eq!(clean_name("Version 2.0"), "Version 2.0", "a long tail after the dot isn't an extension");
+        assert_eq!(clean_name("  "), "video");
     }
 }

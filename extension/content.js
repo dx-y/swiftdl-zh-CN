@@ -244,17 +244,22 @@
     const m4a = audios.filter((f) => f.mime.startsWith("audio/mp4"));
     const audioSize = Math.max(0, ...(m4a.length ? m4a : audios).map((f) => f.size));
     const heights = [...new Set(videos.map((f) => f.height))].sort((a, b) => b - a);
-    const list = heights.map((h) => {
-      const at = videos.filter((f) => f.height === h);
-      const best = at.reduce((a, b) => (b.bitrate > a.bitrate ? b : a));
-      const fps = Math.max(...at.map((f) => f.fps));
-      return {
-        label: fps > 30.5 ? `${h}p${Math.round(fps)}` : `${h}p`,
-        format: `bv*[height=${h}][vcodec^=avc1]+ba[ext=m4a]/bv*[height=${h}]+ba[ext=m4a]/bv*[height=${h}]+ba/b[height=${h}]/bv*[height<=${h}]+ba/b`,
-        ext: "mp4",
-        size: best.size ? best.size + audioSize : null,
-      };
-    });
+    const list = [];
+    // HDR 单独作为画质选项（选择器与主程序内的查找保持一致）：
+    // 否则普通的 "2160p" 在有 HDR 流的视频上会选中 HDR 流。
+    const entry = (set, h, hdr, format) => {
+      const best = set.reduce((a, b) => (b.bitrate > a.bitrate ? b : a));
+      const fps = Math.max(...set.map((f) => f.fps));
+      return { label: `${h}p${fps > 30.5 ? Math.round(fps) : ""}${hdr ? " HDR" : ""}`, format, ext: "mp4", size: best.size ? best.size + audioSize : null };
+    };
+    for (const h of heights) {
+      const at = videos.filter((f) => f.height === h), hdr = at.filter((f) => f.hdr), sdr = at.filter((f) => !f.hdr);
+      const plain = hdr.length
+        ? `bv*[height=${h}][vcodec^=avc1]+ba[ext=m4a]/bv*[height=${h}][dynamic_range=?SDR]+ba[ext=m4a]/bv*[height=${h}][dynamic_range=?SDR]+ba/b[height=${h}]/bv*[height<=${h}][dynamic_range=?SDR]+ba/b`
+        : `bv*[height=${h}][vcodec^=avc1]+ba[ext=m4a]/bv*[height=${h}]+ba[ext=m4a]/bv*[height=${h}]+ba/b[height=${h}]/bv*[height<=${h}]+ba/b`;
+      if (hdr.length) list.push(entry(hdr, h, true, `bv*[height=${h}][dynamic_range~="HDR|HLG|DV"]+ba[ext=m4a]/bv*[height=${h}][dynamic_range~="HDR|HLG|DV"]+ba`));
+      if (sdr.length || !hdr.length) list.push(entry(sdr.length ? sdr : at, h, false, plain));
+    }
     if (audios.length) list.push({ label: "仅音频", format: "ba[ext=m4a]/ba", ext: m4a.length ? "m4a" : "webm", size: audioSize || null });
     return list;
   }

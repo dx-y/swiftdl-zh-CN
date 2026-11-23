@@ -35,8 +35,8 @@ out = Path(__file__).parent / "out"
 
 # ---- winget ----
 installers = []
-for arch, suffix in (("x64", "_x64-setup.exe"), ("arm64", "_arm64-setup.exe")):
-    a = find(suffix)
+for arch, suffixes in (("x64", ("_x64-setup.exe",)), ("arm64", ("_arm64_installer.exe", "_arm64-setup.exe"))):
+    a = next((x for x in (find(sfx) for sfx in suffixes) if x), None)
     if a:
         installers.append(f"""- Architecture: {arch}
   InstallerUrl: {a['browser_download_url']}

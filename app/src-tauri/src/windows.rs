@@ -41,6 +41,16 @@ fn bring_to_front(w: &WebviewWindow) {
     let _ = w.show();
     let _ = w.set_always_on_top(true);
     let _ = w.set_focus();
+    // Linux desktops refuse to let a background app take focus, so also ask the
+    // shell to point at the window (#24), and leave the "New download" dialog
+    // on top: it is small, and waits for an answer.
+    #[cfg(target_os = "linux")]
+    {
+        let _ = w.request_user_attention(Some(tauri::UserAttentionType::Critical));
+        if w.label().starts_with("new-") {
+            return;
+        }
+    }
     let w = w.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(600));
@@ -66,7 +76,9 @@ pub fn open(app: &AppHandle, label: &str, query: &str, title: &str) -> tauri::Re
         // card and shadow), so no native frame, border or unpainted edge shows.
         let built = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(format!("download.html?{query}").into()))
             .title(&title)
-            .inner_size(WINDOW_WIDTH, 360.0)
+            // Tall enough for the New download window with every row (it has
+            // grown since 0.4.0); the page then shrinks it to what it shows.
+            .inner_size(WINDOW_WIDTH, 470.0)
             .resizable(false)
             .maximizable(false)
             .decorations(false)

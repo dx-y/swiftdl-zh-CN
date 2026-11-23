@@ -36,6 +36,9 @@ pub fn get_state(m: Mgr) -> AppState {
 
 #[tauri::command]
 pub async fn probe_url(m: Mgr<'_>, url: String, headers: Vec<(String, String)>) -> Result<ProbeInfo, String> {
+    if crate::media::is_spotify(url.trim()) {
+        return Err(crate::media::SPOTIFY_MSG.into());
+    }
     // A link on a debrid host: name and size come from the service.
     let (service, token) = m.debrid();
     if let Some(direct) = crate::debrid::resolve(m.client(), &service, &token, url.trim()).await.map_err(|e| format!("{e:#}"))? {
@@ -280,6 +283,31 @@ pub async fn grab_page(m: Mgr<'_>, url: String) -> Result<Vec<crate::grabber::Fo
     }
     let html = resp.text().await.map_err(|e| e.to_string())?;
     Ok(crate::grabber::find_links(&html, &final_url))
+}
+
+/// Whether a link is a playlist page (YouTube's /playlist?list=...).
+#[tauri::command]
+pub fn is_playlist_url(url: String) -> bool {
+    crate::media::is_playlist_url(url.trim())
+}
+
+/// The videos of a playlist, to choose from.
+#[tauri::command]
+pub async fn probe_playlist(m: Mgr<'_>, url: String) -> Result<crate::media::Playlist, String> {
+    crate::media::playlist(m.client(), url.trim(), vec![]).await.map_err(|e| format!("{e:#}"))
+}
+
+#[derive(serde::Deserialize)]
+pub struct PlaylistPick {
+    url: String,
+    title: String,
+}
+
+/// Adds the chosen playlist videos as separate downloads ("high", "best" or "audio").
+#[tauri::command]
+pub fn add_playlist(m: Mgr, entries: Vec<PlaylistPick>, mode: String) -> usize {
+    let list: Vec<(String, String)> = entries.into_iter().map(|e| (e.url, e.title)).collect();
+    m.add_playlist(&list, &mode)
 }
 
 /// Downloads the file a Metalink describes, from all its mirrors.
