@@ -110,6 +110,10 @@ gh release create vX.Y.Z-zh.1 \
 
 ## 七、自动跟随上游（`upstream-watch.yml`）
 
+> **安装方式**：本机 `gh` token 只含 `gist, read:org, repo`，不含 `workflow`，因此该文件目前以
+> `docs/upstream-watch.yml.template` 形式存放。执行 `gh auth refresh -s workflow` 授权后，
+> 把模板复制回 `.github/workflows/upstream-watch.yml` 提交即可生效；也可直接在 GitHub 网页端新建该文件并粘贴内容。
+
 `.github/workflows/upstream-watch.yml` 每天 09:00（北京时间）检查上游发布：
 
 | 判定 | 动作 |
