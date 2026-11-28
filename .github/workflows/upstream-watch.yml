@@ -5,6 +5,7 @@
 #   - 上游自己已内置简体中文时停手，不再自动构建
 # 命中新正式版时：取上游源码 -> 重放 tools/apply-zh.py 的文案映射 -> 提交到 zh-CN
 #   -> 打 tag vX.Y.Z-zh.1 交给 release.yml 构建（产物进 draft Release，由人工审阅后发布）
+#   -> 同步提交前剔除 .github/workflows 的改动，只用仓库自身的工作流文件，避免被 GitHub 拒绝推送
 
 name: Upstream watch
 
@@ -130,6 +131,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
+          # 上游源码自带 .github/workflows（典型是 release.yml），rsync 覆盖后会进暂存区。
+          # 用 GITHUB_TOKEN 推送含工作流文件的提交会被 GitHub 拒绝
+          # （refusing to allow a GitHub App to create or update workflow without workflows permission），
+          # 因此提交前把该目录整体还原：受控文件回到 HEAD 内容，上游新带来的未跟踪文件删除，
+          # 让同步提交只包含源码与汉化内容。
+          git restore --staged -- .github/workflows
+          git checkout -- .github/workflows
+          git clean -fdq .github/workflows
           if git diff --cached --quiet; then echo "无改动，跳过提交"; exit 0; fi
           git commit -m "chore: 同步上游 ${{ steps.up.outputs.tag }} 并重放汉化"
           git push origin HEAD:zh-CN
