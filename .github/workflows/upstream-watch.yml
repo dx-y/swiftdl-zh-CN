@@ -1,10 +1,11 @@
 # 每天检查上游 harshsinghsv/swiftdl 是否发了新的正式版：
 #   - 测试版（prerelease）与草稿（draft）一律跳过
 #   - 上游版本号不高于当前汉化版时跳过
-#   - 该版本已经打过 vX.Y.Z-zh.N tag 时跳过
+#   - 该版本已经打过 vX.Y.Z-zh.1 tag 时跳过
 #   - 上游自己已内置简体中文时停手，不再自动构建
-# 命中新正式版时：取上游源码 → 重放 tools/apply-zh.py 的文案映射 → 提交到 zh-CN
-#   → 打 tag vX.Y.Z-zh.1 交给 release.yml 构建（产物进 draft Release，由人工审阅后发布）
+# 命中新正式版时：取上游源码 -> 重放 tools/apply-zh.py 的文案映射 -> 提交到 zh-CN
+#   -> 打 tag vX.Y.Z-zh.1 交给 release.yml 构建（产物进 draft Release，由人工审阅后发布）
+
 name: Upstream watch
 
 on:
@@ -45,8 +46,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag=$(gh api "repos/$UPSTREAM/releases?per_page=30" \
-                --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name')
+          tag=$(gh api "repos/$UPSTREAM/releases?per_page=30" --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name')
           test -n "$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
@@ -61,22 +61,25 @@ jobs:
           up_v="${{ steps.up.outputs.version }}"
           newest=$(printf '%s\n%s\n' "$local_v" "$up_v" | sort -V | tail -1)
           if [ "$newest" != "$up_v" ] || [ "$local_v" = "$up_v" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "无新版本（上游 $up_v / 本地 $local_v）"; exit 0
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "无新版本（上游 $up_v / 本地 $local_v）"
+            exit 0
           fi
           if gh api "repos/${{ github.repository }}/git/ref/tags/v${up_v}-zh.1" >/dev/null 2>&1; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "v${up_v}-zh.1 已存在"; exit 0
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "v${up_v}-zh.1 已存在，跳过"
+            exit 0
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Stop if upstream ships Simplified Chinese itself
-        if: steps.need.outputs.skip == 'false'
         id: zh
+        if: steps.need.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "builtin=false" >> "$GITHUB_OUTPUT"
-          for p in app/ui/src/i18n/zh-CN.json app/ui/src/locales/zh-CN.json \
-                   app/ui/src/i18n/zh.json app/ui/src/locales/zh.json; do
+          for p in app/ui/src/i18n/zh-CN.json app/ui/src/locales/zh-CN.json app/ui/src/i18n/zh.json app/ui/src/locales/zh.json; do
             if gh api "repos/$UPSTREAM/contents/$p?ref=${{ steps.up.outputs.tag }}" >/dev/null 2>&1; then
               echo "builtin=true" >> "$GITHUB_OUTPUT"
               echo "上游已内置简体中文（$p），停止自动汉化构建"
@@ -90,37 +93,36 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          mkdir -p /tmp/up && cd /tmp/up
-          gh api "repos/$UPSTREAM/tarball/${{ steps.up.outputs.tag }}" > up.tgz
-          tar -xzf up.tgz --strip-components=1
-          cd -
-          # 用新上游的内容替换代码，fork 自己的汉化工具/文档/中文横幅保留
-          rsync -a --delete \
-            --exclude '.git' \
-            --exclude 'tools/apply-zh.py' --exclude 'tools/extract-en.py' \
-            --exclude 'docs/SYNC-zh-CN.md' --exclude 'README.md' \
-            /tmp/up/ ./
+          mkdir -p /tmp/up
+          gh api "repos/$UPSTREAM/tarball/${{ steps.up.outputs.tag }}" > /tmp/up.tgz
+          tar -xzf /tmp/up.tgz -C /tmp/up --strip-components=1
+          rsync -a --delete --exclude '.git' --exclude 'tools/apply-zh.py' --exclude 'tools/extract-en.py' --exclude 'docs/SYNC-zh-CN.md' --exclude 'README.md' /tmp/up/ ./
           python3 tools/apply-zh.py app/ui
 
       - name: Note the Chinese release in CHANGELOG
         if: steps.need.outputs.skip == 'false' && steps.zh.outputs.builtin == 'false'
+        env:
+          NV: ${{ steps.up.outputs.version }}-zh.1
+          UP: ${{ steps.up.outputs.version }}
         run: |
-          TODAY=$(date +%F)
-          export TODAY
-          python3 - <<'PY'
-          import os
-          v = "${{ steps.up.outputs.version }}-zh.1"
-          p = "CHANGELOG.md"
-          t = open(p, encoding="utf-8").read()
-          if "[%s]" % v not in t:
-              entry = ("## [%s] - %s\n"
-                       "本版为简体中文汉化版，基于上游 v%s（MIT，非官方 fork）。\n"
-                       "- 由 upstream-watch 自动重放 tools/apply-zh.py 的既有文案映射\n"
-                       "- 上游本版新增界面可能仍有英文残留，请按 docs/SYNC-zh-CN.md 第二节补译\n\n") % (
-                  v, os.environ["TODAY"], "${{ steps.up.outputs.version }}")
-              t = t.replace("## [Unreleased]\n", "## [Unreleased]\n\n" + entry, 1)
-              open(p, "w", encoding="utf-8", newline="\n").write(t)
-          PY
+          set -e
+          [ -f CHANGELOG.md ] || exit 0
+          if grep -q "\[$NV\]" CHANGELOG.md; then echo "CHANGELOG 已有本版"; exit 0; fi
+          awk -v v="$NV" -v u="$UP" -v d="$(date +%F)" '
+            done { print; next }
+            { print }
+            /^## \[Unreleased\]/ {
+              print ""
+              print "## [" v "] - " d
+              print "本版为简体中文汉化版，基于上游 v" u "（MIT，非官方 fork）。"
+              print ""
+              print "- 由 upstream-watch 自动重放 tools/apply-zh.py 的既有文案映射"
+              print "- 上游本版新增界面可能仍有英文残留，请按 docs/SYNC-zh-CN.md 第二节补译"
+              print ""
+              done=1
+            }
+          ' CHANGELOG.md > /tmp/ch.log
+          mv /tmp/ch.log CHANGELOG.md
 
       - name: Commit and push to zh-CN
         if: steps.need.outputs.skip == 'false' && steps.zh.outputs.builtin == 'false'
@@ -128,7 +130,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          if git diff --cached --quiet; then echo "无改动"; exit 0; fi
+          if git diff --cached --quiet; then echo "无改动，跳过提交"; exit 0; fi
           git commit -m "chore: 同步上游 ${{ steps.up.outputs.tag }} 并重放汉化"
           git push origin HEAD:zh-CN
 
@@ -144,14 +146,13 @@ jobs:
         if: steps.need.outputs.skip == 'false' && steps.zh.outputs.builtin == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UP: ${{ steps.up.outputs.tag }}
         run: |
-          cat > body.md <<'EOF'
-          上游发布了新正式版，已自动把既有汉化映射重放到新源码上并打了中文 tag。
-
-          待办：
-          - [ ] 对照 CHANGELOG 中本版新增功能，检查是否有新界面未汉化（`python tools/extract-en.py app/ui`）
-          - [ ] 补译后把新映射写进 `tools/apply-zh.py` 的 MAP，保证下次可重放
-          - [ ] 走一遍 `docs/SYNC-zh-CN.md` 第三节复验清单
-          - [ ] 审阅 draft Release 后发布
-          EOF
-          gh issue create --title "上游 ${{ steps.up.outputs.tag }}：请复核新增界面汉化" --body-file body.md
+          {
+            printf '上游发布了新正式版 %s，已自动把既有汉化映射重放到新源码上并打了中文 tag（产物为 draft Release）。\n\n' "$UP"
+            printf -- '- [ ] 检查本版新增界面是否有英文残留（python tools/extract-en.py app/ui）\n'
+            printf -- '- [ ] 补译后把新映射写进 tools/apply-zh.py 的 MAP，保证下次可重放\n'
+            printf -- '- [ ] 走一遍 docs/SYNC-zh-CN.md 第三节复验清单\n'
+            printf -- '- [ ] 审阅 draft Release 后发布\n'
+          } > body.md
+          gh issue create --title "上游 $UP：请复核新增界面汉化" --body-file body.md
