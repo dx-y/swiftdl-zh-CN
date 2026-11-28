@@ -965,7 +965,9 @@ function nextPending() {
 
 // ---------- settings ----------
 // Interface size: the whole window scales (the download windows keep their size).
-const applyScale = (pct?: number) => { document.documentElement.style.zoom = String((pct && pct >= 80 && pct <= 160 ? pct : 100) / 100); };
+// The whole page is zoomed by the app: CSS zoom made the layout taller than the
+// window, cutting off its bottom when maximized (#29).
+const applyScale = (pct?: number) => { invoke("set_zoom", { percent: pct && pct >= 80 && pct <= 160 ? pct : 100 }).catch(() => {}); };
 let setScale = 100, setDebridProvider = "realdebrid", setVideoDef = "ask";
 function renderVideoDef() { $("set-videodef").querySelectorAll<HTMLElement>("[data-v]").forEach((b) => b.classList.toggle("on", b.dataset.v === setVideoDef)); }
 $("set-videodef").addEventListener("click", (e) => { const b = target(e).closest<HTMLElement>("[data-v]"); if (b) { setVideoDef = b.dataset.v!; renderVideoDef(); } });
@@ -1033,6 +1035,7 @@ function openSettings(tab = "general") {
   $("set-ask").checked = s.askBeforeDownload;
   $("set-notify").checked = s.notifyOnComplete;
   $("set-clip").checked = s.watchClipboard;
+  $("set-startup").checked = s.runAtStartup;
   $("set-extract").checked = s.extractArchives;
   $("set-proxy").value = s.proxy || "";
   $("set-bind").value = s.bindAddress || "";
@@ -1094,6 +1097,7 @@ $("form-settings").addEventListener("submit", async (e) => {
     askBeforeDownload: $("set-ask").checked,
     notifyOnComplete: $("set-notify").checked,
     watchClipboard: $("set-clip").checked,
+    runAtStartup: $("set-startup").checked,
     extractArchives: $("set-extract").checked,
     proxy: $("set-proxy").value.trim(),
     bindAddress: $("set-bind").value.trim(),

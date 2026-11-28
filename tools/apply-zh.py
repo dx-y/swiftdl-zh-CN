@@ -12,6 +12,16 @@ ROOT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "ui")
 
 MAP = {
+# ---------- 0.5.0 / 0.5.1 new UI ----------
+"Start with the computer": "开机启动",
+"Open quietly in the tray at sign-in, so the browser extension always has SwiftDL to send downloads to": "登录时在托盘中静默启动，让浏览器扩展始终有 SwiftDL 可以接收下载任务",
+# 扩展（extension/，需以该目录为 ROOT 运行）
+"Can't reach SwiftDL": "无法连接 SwiftDL",
+"Connect through a port instead": "改为通过端口连接",
+"In SwiftDL, open Settings, switch on Remote control and copy the secret. SwiftDL must be running.": "在 SwiftDL 的“设置 > 本地 API”中开启“兼容 aria2 的 API”，并复制其中的密钥。SwiftDL 需保持运行。",
+"Port (6800)": "端口（6800）",
+"Save and test": "保存并测试",
+"Download SwiftDL": "下载 SwiftDL",
 # ---------- 0.4.2 / 0.4.3 new UI ----------
 # 只放完整独立字符串；带 ${...} 的模板串在源码里手工处理。
 "Playlist": "播放列表",
@@ -314,6 +324,8 @@ print(json.dumps(report, ensure_ascii=False, indent=1))
 LOGIC_KEYS = {"Delete", "Backspace", "Audio only", "New download", "Other"}
 
 RUST_MAP = {
+"could not change start with the computer: {e}": "无法设置开机启动：{e}",
+"could not read start with the computer: {e}": "无法读取开机启动状态：{e}",
 "Open SwiftDL":"打开 SwiftDL","Quit SwiftDL":"退出 SwiftDL","Ignore speed limit":"忽略限速",
 "Download complete":"下载完成","Unpacked":"已解压","Couldn't unpack":"解压失败",
 "Downloads finished":"下载全部结束","Going to sleep in a few seconds.":"几秒后将进入睡眠。",

@@ -46,6 +46,14 @@
     <b>无法连接 SwiftDL</b>
     <span id="why">请先打开一次 SwiftDL。若已在运行，请重启浏览器。</span>
     <a href="https://github.com/harshsinghsv/swiftdl/releases/latest" target="_blank" class="btn">下载 SwiftDL</a>
+    <details id="port">
+      <summary>改为通过端口连接</summary>
+      <p>在 SwiftDL 的“设置 &gt; 本地 API”中开启“兼容 aria2 的 API”，并复制其中的密钥。SwiftDL 需保持运行。</p>
+      <input id="api-port" inputmode="numeric" placeholder="端口（6800）" aria-label="端口">
+      <input id="api-secret" type="password" placeholder="密钥" aria-label="密钥" autocomplete="off">
+      <button id="api-save" class="btn">保存并测试</button>
+      <span id="api-msg"></span>
+    </details>
   </div>
 
   <script src="popup.js"></script>

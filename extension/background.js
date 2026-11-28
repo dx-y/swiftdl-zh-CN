@@ -24,6 +24,32 @@ async function log(event) {
 
 // ---------- talking to the app ----------
 
+// The app's local API (Settings > Remote control) is a second way to reach it,
+// for when the browser can't use the native helper. Port and secret are kept
+// on this computer only.
+const apiConfig = async () => {
+  const { api } = await chrome.storage.local.get("api");
+  return api?.secret ? { port: Number(api.port) || 6800, secret: api.secret } : null;
+};
+
+async function apiCall(method, params = []) {
+  const cfg = await apiConfig();
+  if (!cfg) throw new Error("未设置端口和密钥");
+  let res;
+  try {
+    res = await fetch(`http://127.0.0.1:${cfg.port}/jsonrpc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: [`token:${cfg.secret}`, ...params] }),
+    });
+  } catch {
+    return { ok: false, error: "SwiftDL 未运行，或未开启本地 API（设置 > 本地 API）" };
+  }
+  const body = await res.json().catch(() => null);
+  if (body?.error) return { ok: false, error: body.error.message === "Unauthorized" ? "密钥与 SwiftDL 中的密钥不一致" : body.error.message };
+  return { ok: true, version: body?.result?.version };
+}
+
 async function cookieHeader(url) {
   try {
     const cookies = await chrome.cookies.getAll({ url });
@@ -48,6 +74,13 @@ async function sendToApp({ url, referrer, filename, qualities, pick }) {
   // closed. A start that fails once (the computer is busy, an update is
   // still being written) usually works a moment later, so try twice.
   let reply;
+  // A port set up in the popup comes first: the helper can start and say "ok"
+  // and still not reach an app that runs as administrator (#16).
+  if (await apiConfig()) {
+    reply = await apiCall("swiftdl.download", [message]);
+    if (reply.ok) return;
+    await log(`本地 API 调用失败，改用辅助程序：${reply.error}`);
+  }
   try {
     reply = await chrome.runtime.sendNativeMessage(HOST, message);
   } catch (e) {
@@ -61,7 +94,12 @@ async function sendToApp({ url, referrer, filename, qualities, pick }) {
 const ping = () =>
   chrome.runtime.sendNativeMessage(HOST, { type: "ping" })
     .then((r) => ({ ok: !!r?.ok, version: r?.version }))
-    .catch((e) => ({ ok: false, error: String(e?.message || e) }));
+    .catch(async (e) => {
+      const native = String(e?.message || e);
+      if (!(await apiConfig())) return { ok: false, error: native };
+      const r = await apiCall("aria2.getVersion");
+      return r.ok ? { ok: true, version: r.version, via: "port" } : { ok: false, error: r.error, native };
+    });
 
 function flashBadge(text, color, tabId) {
   chrome.action.setBadgeBackgroundColor({ color });

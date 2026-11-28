@@ -34,6 +34,14 @@ pub fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Sets the main window's interface size, in percent (80-160).
+pub fn main_zoom(app: &AppHandle, percent: u32) {
+    let pct = if (80..=160).contains(&percent) { percent } else { 100 };
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_zoom(f64::from(pct) / 100.0);
+    }
+}
+
 /// SwiftDL lives in the tray like IDM: closing the main window keeps
 /// downloads (and browser integration) running.
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -81,10 +89,12 @@ fn main() {
                 app.state::<Arc<DownloadManager>>().prepare(&inc);
             } else if let Some(inc) = native_host::parse_add_arg(&args).or_else(|| torrent::parse_open_arg(&args)) {
                 app.state::<Arc<DownloadManager>>().incoming(inc);
-            } else {
+            } else if !args.iter().any(|a| a == "--background") {
                 show_main_window(app);
             }
         }))
+        // Started by the computer with --background: stay in the tray.
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--background"])))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -106,9 +116,11 @@ fn main() {
             if let Some(main) = app.get_webview_window("main") {
                 windows::polish(&main);
             }
+            main_zoom(app.handle(), mgr.settings().ui_scale);
             if let Err(e) = build_tray(app.handle()) {
                 crate::log::line(&format!("tray icon not available: {e:#}"));
             }
+            mgr.apply_autostart();
             mgr.start_ticker();
             let api = mgr.settings();
             if api.api_enabled && !api.api_secret.is_empty() {
@@ -132,12 +144,14 @@ fn main() {
             }
             match native_host::parse_add_arg(&args).or_else(|| torrent::parse_open_arg(&args)) {
                 Some(inc) => mgr.incoming(inc),
+                None if args.iter().any(|a| a == "--background") => {}
                 None => show_main_window(app.handle()),
             }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_state,
+            commands::set_zoom,
             commands::probe_url,
             commands::probe_media,
             commands::probe_note,

@@ -6,6 +6,41 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1-zh.1] - 2026-11-28
+
+本版为简体中文汉化版，基于上游 v0.5.1（MIT，非官方 fork，未改动任何下载逻辑）。
+
+- 汉化：上游 0.5.0 / 0.5.1 新增界面与提示全部中文化 —— 设置 > 常规 > 开机启动、任务栏按钮上的下载进度、界面缩放（整页缩放）、扩展弹窗的「改为通过端口连接」（端口 / 密钥 / 保存并测试）及其提示
+- 汉化：扩展在端口优先转交、提权应用场景下的状态与错误文案，以及下载窗口、通知、托盘菜单中的新增文案
+- 保持：分类目录名 `Video / Music / Programs / Compressed / Documents / Images / Other` 不译；扩展中参与字符串比较的标签值与显示文案同步；`tauri.conf.json` 的 identifier 仍为 `com.swiftdl.app.cn`
+
+## [0.5.1] - 2026-11-26
+
+### Added
+- **Download progress on the taskbar button** (#28): a bar for the running
+  downloads, or a pulse while their sizes aren't known yet.
+
+### Fixed
+- **Downloads from the browser didn't arrive when SwiftDL ran as
+  administrator** (#16). With Remote control on, the browser helper now hands
+  downloads over through SwiftDL's port first, and the extension tries a port
+  set in its popup before the helper.
+- **Interface size above 100% cut off the bottom of the window** when it was
+  enlarged or maximized (#29). The whole page is now zoomed by the app.
+
+## [0.5.0] - 2026-11-24
+
+### Added
+- **Start with the computer.** SwiftDL opens quietly in the tray at sign-in, so
+  the browser extension always has an app to hand downloads to. It is on by
+  default; Settings > General > Start with the computer turns it off.
+- **The extension can connect through a port.** Where the browser can't use
+  SwiftDL's helper (a portable copy, for example), switch on Remote control in
+  SwiftDL, then enter its port and secret in the extension's popup (#16).
+
+### Fixed
+- **Linux: the save folder was named `Downloads\Video`** (a backslash) when
+  sorting by file type (#26).
 ## [0.4.3-zh.1] - 2026-11-23
 
 本版为简体中文汉化版，基于上游 v0.4.3（MIT，非官方 fork，未改动任何下载逻辑）。

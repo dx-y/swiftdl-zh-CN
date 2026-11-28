@@ -2,7 +2,7 @@
 
 本仓库是 [harshsinghsv/swiftdl](https://github.com/harshsinghsv/swiftdl) 的简体中文汉化 fork。
 
-> 当前基线：上游 **v0.4.3**（`app/src-tauri/tauri.conf.json` 的 `version`），中文 tag `v0.4.3-zh.1`。
+> 当前基线：上游 **v0.5.1**（`app/src-tauri/tauri.conf.json` 的 `version`），中文 tag `v0.5.1-zh.1`。
 > 上一次基线是 v0.4.1（`v0.4.1-zh.1`），0.4.1→0.4.3 的合并冲突集中在 UI 文案、`tauri.conf.json`、Rust 提示串与扩展 `content.js`，共 8 个文件 11 处冲突。
 
 分支模型：
